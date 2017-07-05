@@ -54,7 +54,7 @@ def routes(**kwargs):
     return [
         url(r"/api/1.0/version", VersionHandler, name="version", kwargs=kwargs),
         url(r"/api/1.0/start/([\w_-]+)", StartHandler, name="start", kwargs=kwargs),
-        #url(r"/api/1.0/status/(\d*)", StatusHandler, name="status", kwargs=kwargs),
+        url(r"/api/1.0/status/(\d*)", StatusHandler, name="status", kwargs=kwargs),
         #url(r"/api/1.0/stop/([\d|all]*)", StopHandler, name="stop", kwargs=kwargs),
     ]
 
