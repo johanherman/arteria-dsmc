@@ -106,7 +106,7 @@ class StartHandler(BaseDsmcHandler):
        # cmd = "export DSM_LOG={} && dsmc archive {} -subdir=yes -desc={}".format(dsmc_log_file,
        #                                                                          runfolder,
        #                                                                          description)
-        cmd = "dsmc q"
+        cmd = ["/usr/bin/dsmc q"]
         job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir="/tmp", stdout="/tmp/stdout", stderr="/tmp/stderr")
 
         #job_id = self.runner_service.start(cmd,
