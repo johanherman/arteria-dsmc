@@ -120,39 +120,39 @@ class StartHandler(BaseDsmcHandler):
         #    self.request.host,
         #    self.reverse_url("status", job_id))
 
-        #response_data = {
-        #    "job_id": job_id,
-        #   "service_version": version,
-        #    "link": status_end_point,
-        #    "state": State.STARTED,
-        #    "dsmc_log": dsmc_log_file}
+        response_data = {
+            "job_id": job_id,
+            "service_version": version,
+            "link": status_end_point,
+            "state": State.STARTED}#,
+            #"dsmc_log": dsmc_log_file}
 
         self.set_status(202, reason="started processing")
         self.write_object(response_data)
 
 
-#class StatusHandler(BaseDsmcHandler):
-#    """
-#    Get the status of one or all jobs.
-#    """
-#
-#    def get(self, job_id):
-#        """
-#        Get the status of the specified job_id, or if now id is given, the
-#        status of all jobs.
-#        :param job_id: to check status for (set to empty to get status for all)
-#        """
-#
-#        if job_id:
-#            status = {"state": self.runner_service.status(job_id)}
-#        else:
-#            all_status = self.runner_service.status_all()
-#            status_dict = {}
-#            for k, v in all_status.iteritems():
-#                status_dict[k] = {"state": v}
-#            status = status_dict
-#
-#        self.write_json(status)
+class StatusHandler(BaseDsmcHandler):
+    """
+    Get the status of one or all jobs.
+    """
+
+    def get(self, job_id):
+        """
+        Get the status of the specified job_id, or if now id is given, the
+        status of all jobs.
+        :param job_id: to check status for (set to empty to get status for all)
+        """
+
+        if job_id:
+            status = {"state": self.runner_service.status(job_id)}
+        else:
+            all_status = self.runner_service.status_all()
+            status_dict = {}
+            for k, v in all_status.iteritems():
+                status_dict[k] = {"state": v}
+            status = status_dict
+
+        self.write_json(status)
 
 #class StopHandler(BaseDsmcHandler):
 #    """
