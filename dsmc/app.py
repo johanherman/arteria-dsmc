@@ -3,7 +3,7 @@ from tornado.web import URLSpec as url
 
 from arteria.web.app import AppService
 
-from dsmc.handlers.dsmc_handlers import VersionHandler, StartHandler, StatusHandler, StopHandler
+from dsmc.handlers.dsmc_handlers import VersionHandler, StartHandler#, StatusHandler, StopHandler
 from dsmc.lib.jobrunner import LocalQAdapter
 
 # NB: Remember that the service must be able to run on both biotanks and Irma. 
