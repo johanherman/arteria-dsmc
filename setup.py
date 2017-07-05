@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-from checksum import __version__
+from dsmc import __version__
 import os
 
 
