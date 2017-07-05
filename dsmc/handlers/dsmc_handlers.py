@@ -115,10 +115,10 @@ class StartHandler(BaseDsmcHandler):
         #                                   stdout=dsmerror_log_file,
         #                                   stderr=dsmerror_log_file)
 
-        #status_end_point = "{0}://{1}{2}".format(
-        #    self.request.protocol,
-        #    self.request.host,
-        #    self.reverse_url("status", job_id))
+        status_end_point = "{0}://{1}{2}".format(
+            self.request.protocol,
+            self.request.host,
+            self.reverse_url("status", job_id))
 
         response_data = {
             "job_id": job_id,
