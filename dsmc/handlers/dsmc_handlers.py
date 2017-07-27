@@ -109,7 +109,7 @@ class StartHandler(BaseDsmcHandler):
         #cmd = "/usr/bin/dsmc q"
         #dsmc archive <path to runfolder_archive>/ -subdir=yes -description=`uuidgen`
         uniq_id = str(uuid.uuid4())
-        cmd = " ".join["dsmc archive", runfolder_archive, "/", "-subdir=yes", "-description=", uniq_id]
+        cmd = " ".join(["dsmc archive", runfolder_archive, "/", "-subdir=yes", "-description=", uniq_id])
         job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir="/tmp", stdout="/tmp/stdout", stderr="/tmp/stderr")
 
         #job_id = self.runner_service.start(cmd,
