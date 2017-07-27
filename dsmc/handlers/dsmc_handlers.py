@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import datetime
-
+import uuid
 
 from arteria.exceptions import ArteriaUsageException
 from arteria.web.state import State
@@ -52,14 +52,14 @@ class StartHandler(BaseDsmcHandler):
     :param monitored_dir: The root in which the runfolder should exist
     :return: True if this is a valid runfolder
     """
-    #@staticmethod
-    #def _validate_runfolder_exists(runfolder, monitored_dir):
-    #    if os.path.isdir(monitored_dir):
-    #        sub_folders = [ name for name in os.listdir(monitored_dir)
-    #                        if os.path.isdir(os.path.join(monitored_dir, name)) ]
-    #        return runfolder in sub_folders
-    #    else:
-    #        return False
+    @staticmethod
+    def _validate_runfolder_exists(runfolder, monitored_dir):
+        if os.path.isdir(monitored_dir):
+            sub_folders = [ name for name in os.listdir(monitored_dir)
+                            if os.path.isdir(os.path.join(monitored_dir, name)) ]
+            return runfolder in sub_folders
+        else:
+            return False
 
     #@staticmethod
     #def _is_valid_log_dir(log_dir):
@@ -80,17 +80,17 @@ class StartHandler(BaseDsmcHandler):
     :param runfolder: name of the runfolder we want to start archiving
 
     """
-    def post(self, runfolder):
+    def post(self, runfolder_archive):
 
-        #monitored_dir = self.config["monitored_directory"]
+        monitored_dir = self.config["monitored_directory"]
 
-        #if not StartHandler._validate_runfolder_exists(runfolder, monitored_dir):
-            #raise ArteriaUsageException("{} is not found under {}!".format(runfolder, monitored_dir))
+        if not StartHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
+            raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))
 
         #request_data = json.loads(self.request.body)
-
-        #path_to_runfolder = os.path.join(monitored_dir, runfolder)
         #description = request_data["description"]
+
+        path_to_runfolder = os.path.join(monitored_dir, runfolder_archive)
 
         ##dsmc_log_dir = self.config["dsmc_log_directory"]
 
@@ -106,7 +106,10 @@ class StartHandler(BaseDsmcHandler):
        # cmd = "export DSM_LOG={} && dsmc archive {} -subdir=yes -desc={}".format(dsmc_log_file,
        #                                                                          runfolder,
        #                                                                          description)
-        cmd = "/usr/bin/dsmc q"
+        #cmd = "/usr/bin/dsmc q"
+        #dsmc archive <path to runfolder_archive>/ -subdir=yes -description=`uuidgen`
+        uniq_id = str(uuid.uuid4())
+        cmd = " ".join["dsmc archive", runfolder_archive, "/", "-subdir=yes", "-description=", uniq_id]
         job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir="/tmp", stdout="/tmp/stdout", stderr="/tmp/stderr")
 
         #job_id = self.runner_service.start(cmd,
