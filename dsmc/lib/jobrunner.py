@@ -94,38 +94,46 @@ class LocalQAdapter(JobRunnerAdapter):
         return self.server.stop_all_jobs()
 
     def status(self, job_id):
-        #return LocalQAdapter.localq2arteria_status(self.server.get_status(job_id))
-        arteria_status = LocalQAdapter.localq2arteria_status(self.server.get_status(job_id))
+        return LocalQAdapter.localq2arteria_status(self.server.get_status(job_id))
+        ###arteria_status = LocalQAdapter.localq2arteria_status(self.server.get_status(job_id))
 
-        if arteria_status == arteria_state.ERROR:
+# FIXME: Here we should probably do our error checking so that we signal
+# the correct respond to our backup workflow.
+# The code below contains some error that causes dsmc-ws to throw:
+#  File "/opt/arteria/arteria-dsmc-env/lib/python2.7/site-packages/dsmc/lib/jobrunner.py", line 106, in status
+#    if job.proc.returncode == 8: # warning
+#AttributeError: 'NoneType' object has no attribute 'proc'
+
+
+    ###    if arteria_status == arteria_state.ERROR:
             # Should be able to do something like
-            job = self.server.get_job_with_id(job_id)
+    ###        job = self.server.get_job_with_id(job_id)
 # 36     if [ `grep -E 'ANS[0-9]+W' ${DSM_LOG} | wc -l` -eq `grep "ANS1809W" ${DSM_LOG}
 #  | wc -l` ]; then
 
-            if job.proc.returncode == 8: # warning
-                warnings = []
+        ###    if job.proc.returncode == 8: # warning
+        ###        warnings = []
 
-                with open(job.stdout) as log:
-                    #Search for the regexp and count of many ANS1809W we have; if it is
+        ###        with open(job.stdout) as log:
+        ###            #Search for the regexp and count of many ANS1809W we have; if it is
                     #  the same length
                     #Search for the regexp and if we find any other warnings, return 8,
                     #  otherwise 0
-                    for line in log:
-                        match = re.findall(r'ANS[0-9]+W', line)
-                        if match:
-                            warnings.append(match[0])
+        ###            for line in log:
+        ###                match = re.findall(r'ANS[0-9]+W', line)
+        ###                if match:
+        ###                    warnings.append(match[0])
 
-                    for match in warnings:
-                        if match != "ANS1809W":
-                            return arteria_state.ERROR
-                        else:
-                            return arteria_state.DONE
+        ###            for match in warnings:
+        ###                if match != "ANS1809W":
+        ###                    return arteria_state.ERROR
+        ###                else:
+        ###                    return arteria_state.DONE
 
-            else:
-                return arteria_state.ERROR
-        else:
-            return arteria_status
+        ###    else:
+        ###        return arteria_state.ERROR
+        ###else:
+        ###    return arteria_status
 
     # TODO: Perhaps fix this?
     def status_all(self):
