@@ -3,7 +3,7 @@ from tornado.web import URLSpec as url
 
 from arteria.web.app import AppService
 
-from dsmc.handlers.dsmc_handlers import VersionHandler, StartHandler, StatusHandler, UploadMissingHandler#, StopHandler
+from dsmc.handlers.dsmc_handlers import VersionHandler, UploadHandler, StatusHandler, ReuploadHandler#, StopHandler
 from dsmc.lib.jobrunner import LocalQAdapter
 
 # NB: Remember that the service must be able to run on both biotanks and Irma.
@@ -71,9 +71,9 @@ def routes(**kwargs):
 
     return [
         url(r"/api/1.0/version", VersionHandler, name="version", kwargs=kwargs),
-        url(r"/api/1.0/start/([\w_-]+)", StartHandler, name="start", kwargs=kwargs),
+        url(r"/api/1.0/upload/([\w_-]+)", UploadHandler, name="start", kwargs=kwargs),
         url(r"/api/1.0/status/(\d*)", StatusHandler, name="status", kwargs=kwargs),
-        url(r"/api/1.0/uploadmissing/([\w_-]+)", UploadMissingHandler, name="uploadmissing", kwargs=kwargs),
+        url(r"/api/1.0/reupload/([\w_-]+)", ReuploadHandler, name="reupload", kwargs=kwargs),
         #url(r"/api/1.0/stop/([\d|all]*)", StopHandler, name="stop", kwargs=kwargs),
     ]
 

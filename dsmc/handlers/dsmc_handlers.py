@@ -44,7 +44,7 @@ class VersionHandler(BaseDsmcHandler):
         self.write_object({"version": version })
 
 
-class UploadMissingHandler(BaseDsmcHandler):
+class ReuploadHandler(BaseDsmcHandler):
     @staticmethod
     def _validate_runfolder_exists(runfolder, monitored_dir):
         if os.path.isdir(monitored_dir):
@@ -71,7 +71,7 @@ class UploadMissingHandler(BaseDsmcHandler):
         pass
 '''        monitored_dir = self.config["monitored_directory"]
 
-        if not StartHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
+        if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
             raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))            
 
         path_to_runfolder = os.path.join(monitored_dir, runfolder_archive)
@@ -168,7 +168,7 @@ class UploadMissingHandler(BaseDsmcHandler):
         self.write_object(response_data)
 '''
 
-class StartHandler(BaseDsmcHandler):
+class UploadHandler(BaseDsmcHandler):
 
     """
     Validate that the runfolder exists under monitored directories
@@ -208,7 +208,7 @@ class StartHandler(BaseDsmcHandler):
 
         monitored_dir = self.config["monitored_directory"]
 
-        if not StartHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
+        if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
             raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))
 
         #request_data = json.loads(self.request.body)
@@ -218,7 +218,7 @@ class StartHandler(BaseDsmcHandler):
         dsmc_log_dir = self.config["dsmc_log_directory"]
         uniq_id = str(uuid.uuid4())
 
-        if not StartHandler._is_valid_log_dir(dsmc_log_dir):
+        if not UploadHandler._is_valid_log_dir(dsmc_log_dir):
             raise ArteriaUsageException("{} is not a directory!".format(dsmc_log_dir))
 
         dsmc_log_file = "{}/dsmc_{}_{}-{}".format(dsmc_log_dir,
