@@ -101,7 +101,6 @@ class LocalQAdapter(JobRunnerAdapter):
 
     def status(self, job_id):
         arteria_status = LocalQAdapter.localq2arteria_status(self.server.get_status(job_id))
-        #whitelisted_warnings = ["ANS1809W", "ANS2000W"] # FIXME: fetch these from config instead
 
         if arteria_status == arteria_state.ERROR: 
             log.debug("Process returned an error!")
