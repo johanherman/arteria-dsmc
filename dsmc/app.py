@@ -11,11 +11,12 @@ from dsmc.lib.jobrunner import LocalQAdapter
 #
 # FIXME: Write test cases!!!
 # FIXME: Better logging. 
+# FIXME: Better documentation. 
+# FIXME: Integrate with Arteria workflows. 
 # FIXME: Check how many TSM jobs we can queue, and how many can run in 
 # parallel. We should define this somewhere. 
-
-# TODO: Much quicker to develop locally. Continue with that. 
-# TODO: Fixa 1b. 
+# TODO: On Irma we should upload everything under /proj/ngi2016001/nobackup/NGI/ANALYSIS/<PROJECT ID>
+#       with the exception of BAM files. So we need to filter these somehow. 
 
 # TODO: We need 1b on Irma, because we can't execute the scripts there otherwise. 
 #       But 2-4 is a bit more uncertain. It depends on what exactly we are uploading
@@ -23,10 +24,13 @@ from dsmc.lib.jobrunner import LocalQAdapter
 #       for now, if they are not needed on Irma. If that is the case then we it is 
 #       better do start working on readbacks and removal service after we are done with 1b. 
 #
-# Step 1. Only wrap around command
-# "dsmc archive <path to runfolder_archive>/ -subdir=yes -description=`uuidgen`" <-- WORKS.
+
+#### DONE ####
+
+### Step 1. Only wrap around command <-- WORKS.
+# "dsmc archive <path to runfolder_archive>/ -subdir=yes -description=`uuidgen`" 
 #
-# Step 1b. Handle archive of specific files.
+### Step 1b. Handle archive of specific files.<-- WORKS
 # I.e. so we can re-upload failed uploads, and also (if we want to), upload only
 # certain files (this is a second feature though).
 #
@@ -39,9 +43,30 @@ from dsmc.lib.jobrunner import LocalQAdapter
 # need to be able to launch it on Irma as well. Otherwise the service will 
 # just have to call out to the scripts. 
 #
-# Step 1c. Don't exit with an error return code for certain TSM warnings.
+### Step 1c. Don't exit with an error return code for certain TSM warnings. <-- WORKS
 # E.g. ANS1809W which happens for temporary connection errors. And retry
-# until it works (until a certain timeout). <--- WORKS. I.e. we do not return ERROR on whitelisted warnings. 
+# until it works (until a certain timeout). 
+#
+
+# I would probably implement these as separate endpoints, to simplify things. 
+# Otherwise I have to figure out how to handle many long running tasks after each other. 
+#
+# There is an argument for implementing these things in the service anyways, 
+# because it will make things more robust, instead of having to trust the shell scripts. 
+#
+# Step 2 is not needed on biotanks, but for Irma we need to filter BAM files somehow. 
+# Step 3 is not needed on biotanks, but PERHAPS we need to compress them on Irma, depending on how many files there are
+# Step 4 is not needed on biotanks, but we must generate checksums on Irma somehow. 
+
+# For Irma: 
+# 2: Either create an archive dir with symlinks (combination of create-archive-dir and create-symlinked-dirs), 
+#    or ignore the files with TSM filter. Best would be if we use the same system as on biotanks though. 
+# 3: Best case, nothing to do. But if we start implementing archive dirs in the service, 
+#    then we might want to include the compression inside the service as well. 
+#    If that is the case, check compress-archive-package.sh
+# 4: Perhaps best to modify arteria-checksum? So we can generate it with that. 
+
+#### LEFT TO DO ####
 #
 # Step 2? Create the archive dir to upload
 # I.e. lift in the create_archive_dir.py functionality to the service.
@@ -51,15 +76,6 @@ from dsmc.lib.jobrunner import LocalQAdapter
 # I.e. port compress_archive_package.sh to the service
 #
 # Step 4? Generate checksums for the archive dir
-#
-# Step X. Implement a service that can do readback tests.
-# Step Y. Implement a service that can remove runfolders when necessary
-# (e.g. when read backs have been done)
-#
-# Probably best do have a central SQL server for arteria-dsmc + X + Y.
-#
-
-
 
 def routes(**kwargs):
     """
