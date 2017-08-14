@@ -4,6 +4,7 @@ import os
 import datetime
 import uuid
 import subprocess
+import shutil
 import re 
 
 from arteria.exceptions import ArteriaUsageException
@@ -55,20 +56,6 @@ class ReuploadHandler(BaseDsmcHandler):
             return runfolder in sub_folders
         else:
             return False
-
-# Step 1b. Handle archive of specific files.
-# I.e. so we can re-upload failed uploads, and also (if we want to), upload only
-# certain files (this is a second feature though).
-#
-# Either the service waits and retries until all files have succeeded, or it
-# can reuse pdc-descr.sh, pdc-diff.sh and pdc-upload-missing.sh to upload
-# at a later time. More robust to re-use the scripts. Just don't fail on the 
-# things in section 1c. 
-#
-# See if I can implement the script logic in the service instead. Because I 
-# need to be able to launch it on Irma as well. Otherwise the service will 
-# just have to call out to the scripts. 
-
 
     # TODO: Check so that we are not making any mistakes with 
     def post(self, runfolder_archive): 
@@ -324,6 +311,230 @@ class UploadHandler(BaseDsmcHandler):
         self.write_object(response_data)
 
 
+class GenChecksumsHandler(BaseDsmcHandler): 
+    # TODO: Add helper functions - refactor with other base class 
+
+    def post(self, runfolder_archive):
+
+        # FIXME: This needs to be an other path for archives
+        #monitored_dir = self.config["monitored_directory"]
+        path_to_archive_root = "/tmp/apa/pdc_archive_links"
+        monitored_dir = path_to_archive_root
+
+        if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
+            raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))
+
+        #request_data = json.loads(self.request.body)
+        #description = request_data["description"]
+
+        path_to_runfolder = os.path.join(monitored_dir, runfolder_archive)
+
+        filename = "checksums_prior_to_pdc.md5"
+        
+        #ssh <% $.host %> "cd <% $.runfolder %>_archive && find -L . -type f ! -path './checksums_prior_to_pdc.md5' -exec md5sum {} + > checksums_prior_to_pdc.md5"
+        cmd = "cd {} && /usr/bin/find -L . -type f ! -path '{}' -exec /usr/bin/md5sum {{}} + > {}".format(path_to_runfolder, filename, filename)
+        log.debug("Will now execute command {}".format(cmd))
+        job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=monitored_dir, stdout="/tmp/checksum.log", stderr="/tmp/checksum.log") #FIXME: better log
+
+        status_end_point = "{0}://{1}{2}".format(
+            self.request.protocol,
+            self.request.host,
+            self.reverse_url("status", job_id))
+
+        response_data = {
+            "job_id": job_id,
+            "service_version": version,
+            "link": status_end_point,
+            "state": State.STARTED}#,
+            #"dsmc_log": dsmc_log_file}
+
+        self.set_status(202, reason="started processing")
+        self.write_object(response_data)
+
+class CreateDirHandler(BaseDsmcHandler):
+    # TODO: Refactor
+    """
+    Validate that the runfolder exists under monitored directories
+    :param runfolder: The runfolder to check for
+    :param monitored_dir: The root in which the runfolder should exist
+    :return: True if this is a valid runfolder
+    """
+    @staticmethod
+    def _validate_runfolder_exists(runfolder, monitored_dir):
+        if os.path.isdir(monitored_dir):
+            sub_folders = [ name for name in os.listdir(monitored_dir)
+                            if os.path.isdir(os.path.join(monitored_dir, name)) ]
+            return runfolder in sub_folders
+        else:
+            return False
+
+    @staticmethod
+    def _is_valid_log_dir(log_dir):
+        """
+        Check if the log dir is valid. Right now only checks it is a directory.
+        :param: log_dir to check
+        :return: True is valid dir, else False
+        """
+        return os.path.isdir(log_dir)
+
+
+    @staticmethod
+    def _verify_unaligned(srcdir):
+        # On biotanks we need to verify the Unaligned link. 
+        unaligned_link = os.path.join(srcdir, "Unaligned")
+        unaligned_dir = os.path.abspath(unaligned_link)
+
+        if not os.path.exists(unaligned_link) or not os.path.islink(unaligned_link): 
+            log.info("Expected link {} doesn't seem to exist or is broken. Aborting.".format(unaligned_link))
+            return False
+        elif not os.path.exists(unaligned_dir) or not os.path.isdir(unaligned_dir): 
+            log.info("Expected directory {} doesn't seem to exist. Aborting.".format(unaligned_dir))
+            return False
+
+        return True
+
+    @staticmethod
+    def _verify_dest(destdir, remove=False): 
+        log.debug("Checking to see if {} exists".format(destdir))
+
+        if os.path.exists(destdir):
+            if remove: 
+                log.debug("Archive directory {} already exists. Operator requested to remove it.".format(destdir))
+                shutil.rmtree(destdir)
+                return True
+            else: 
+                log.debug("Archive directory {} already exists. Aborting.".format(destdir))
+                return False
+        else: 
+            return True
+
+    @staticmethod
+    # Copies src dir tree to dest dir, and excludes a dir if it fullfills. 
+    def _create_dest_dir(srcdir, destdir, exclude=None): 
+
+        def _ignore_all_dirs(directory, content): 
+            return set(f for f in content if not os.path.isdir(os.path.join(directory, f))) 
+
+        shutil.copytree(source, dest, ignore=_ignore_all_dirs)
+
+        #os.makedirs(destdir)
+
+        #for entry in os.listdir(srcdir):
+            #if not entry in exclude: 
+             #   os.symlink(os.path.join(srcdir, entry), os.path.join(destdir, entry))
+    
+        #log.debug("Archive directory {} created successfully.".format(destdir))
+
+    @staticmethod
+    def _create_dest_file_links(srcdir, destdir, exclude=None):
+        pass
+
+    @staticmethod
+    def _create_dest_archive(srcdir, destdir):
+        cmd = "/bin/cp -rs {} {}"
+        # FIXME: Check return code 
+        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        # TODO: This can deadlock according to https://docs.python.org/2/library/subprocess.html
+        retval = p.wait()
+        #my_lines = p.stdout.readlines()
+        return retval 
+
+
+    """
+    Create a directory to be used for archiving.
+
+    :param runfolder: name of the runfolder we want to create an archive dir of
+    :param exclude: list of patterns to use when excluding files and/or dirs 
+    :param remove: boolean to indicate if we should remove previous archive 
+
+    """
+    def post(self, runfolder):
+
+  #destdir = srcdir + "_archive" 
+  #verify_src(srcdir, threshold)
+  #verify_dest(destdir, remove)
+  #create_dest(srcdir, destdir, exclude)
+
+        monitored_dir = self.config["monitored_directory"]
+        path_to_runfolder = os.path.join(monitored_dir, runfolder)
+        #/proj/ngi2016001/nobackup/arteria/pdc_archive_links
+        path_to_archive_root = "/tmp/apa/pdc_archive_links"
+        path_to_archive = os.path.join(path_to_archive_root, runfolder) + "_archive"
+
+        request_data = json.loads(self.request.body)
+        log.debug("Body is {}".format(request_data))
+        remove = eval(request_data["remove"]) # str2bool
+        log.debug("Remove is {}".format(remove))
+        exclude_dirs = request_data["exclude_dirs"]
+        exclude_extensions = request_data["exclude_extensions"]
+
+        if not CreateDirHandler._validate_runfolder_exists(runfolder, monitored_dir):
+            raise ArteriaUsageException("{} is not found under {}!".format(runfolder, monitored_dir))
+
+        # We want to verify that the Unaligned folder is setup correctly when running on biotanks.
+        my_host = self.request.headers.get('Host')            
+        if "biotank" in my_host and not CreateDirHandler._verify_unaligned(path_to_runfolder): 
+            raise ArteriaUsageException("Unaligned directory link {} is broken or missing!".format(os.path.join(path_to_runfolder, "Unaligned")))
+
+        if not CreateDirHandler._verify_dest(path_to_archive, remove): 
+            raise ArteriaUsageException("Error when checking the destination path.")
+        
+        log.debug("Copying {} to {}".format(path_to_runfolder, path_to_archive))
+        cmd = "/bin/cp -rs {}/ {}".format(path_to_runfolder, path_to_archive)
+        # FIXME: Check return code 
+        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        # TODO: This can deadlock according to https://docs.python.org/2/library/subprocess.html
+        retval = p.wait()
+        
+        if retval != 0: 
+            raise ArteriaUsageException("Error when symlinking {}".format(p.stdout.readlines()))
+
+        # Now we want to eliminate some of our files from the archive 
+        for root, dirs, files in os.walk(path_to_archive):
+            for name in dirs: 
+                if name in exclude_dirs: 
+                    log.debug("Removing {} from {}".format(name, root))
+                    shutil.rmtree(os.path.join(root, name))
+
+            for name in files:
+                for ext in exclude_extensions: 
+                    if name.endswith(ext):
+                        log.debug("Removing {} from {}".format(name, root))
+                        os.remove(os.path.join(root, name))
+
+        #Risk these will take long time
+        #_create_dest_dir(srcdir, destdir, exclude)
+        #_create_dest_file_links(srcdir, destdir, exclude)
+        #if not CreateDirHandler._create_dest_archive(path_to_runfolder, path_to_archive)
+
+       # cmd = "export DSM_LOG={} && dsmc archive {} -subdir=yes -desc={}".format(dsmc_log_file,
+       #                                                                          runfolder,
+       #                                                                          description)
+        #cmd = "/usr/bin/dsmc q"
+        #dsmc archive <path to runfolder_archive>/ -subdir=yes -description=`uuidgen`
+        
+        #cmd = "dsmc archive {}/ -subdir=yes -description={}".format(path_to_runfolder, uniq_id)
+        # FIXME: echo is just used when testing return codes locally. 
+        #cmd = "echo 'ANS1809W ANS2000W Test run started.' && echo ANS9999W && echo ANS1809W && exit 8" #false
+#        cmd = "echo 'ANS1809W Test run started.' && echo ANS1809W && exit 8"
+ #       job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=monitored_dir, stdout=dsmc_log_file, stderr=dsmc_log_file)
+
+  #      status_end_point = "{0}://{1}{2}".format(
+   #         self.request.protocol,
+    #        self.request.host,
+     #       self.reverse_url("status", job_id))
+
+        response_data = {
+            #"job_id": job_id,
+            "service_version": version,
+            #"link": status_end_point,
+            "state": State.DONE}#,
+            #"dsmc_log": dsmc_log_file}
+
+        self.set_status(202, reason="finished processing")
+        self.write_object(response_data)
+
+
 class StatusHandler(BaseDsmcHandler):
     """
     Get the status of one or all jobs.
@@ -339,6 +550,7 @@ class StatusHandler(BaseDsmcHandler):
         if job_id:
             status = {"state": self.runner_service.status(job_id)}
         else:
+            # FIXME: Update the correct status for all jobs; the filtering in jobrunner doesn't work here
             all_status = self.runner_service.status_all()
             status_dict = {}
             for k, v in all_status.iteritems():
