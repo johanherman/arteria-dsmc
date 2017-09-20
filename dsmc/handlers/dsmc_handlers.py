@@ -57,7 +57,6 @@ class ReuploadHandler(BaseDsmcHandler):
         else:
             return False
 
-    # TODO: Check so that we are not making any mistakes with 
     def post(self, runfolder_archive): 
         monitored_dir = self.config["monitored_directory"]
 
@@ -74,14 +73,8 @@ class ReuploadHandler(BaseDsmcHandler):
         dsmc_log_file = "{}/dsmc_{}_{}-{}".format(dsmc_log_dir,
                                                       runfolder_archive,
                                                       uniq_id,
-        #                                              description,
                                                       datetime.datetime.now().isoformat())            
 
-
-        # Problem here is that we do not want to queue all the DSMC jobs, as that would become messy
-        # Because we don't want to respond each time. 
-        # I.e. the fetch of descr, and the diff commands we want to execute directly. 
-        # Only the last reupload should be done with the queue. 
 
         # Step 1 - fetch the description of the last uploaded version of this archive
 
@@ -94,29 +87,18 @@ class ReuploadHandler(BaseDsmcHandler):
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # TODO: This can deadlock according to https://docs.python.org/2/library/subprocess.html
         retval = p.wait()
-
-        #Accessing as node: SLLUPNGI_TEST
-        #13              Size  Archive Date - Time    File - Expires on - Description
-        #14              ----  -------------------    -------------------------------
-        #15          4,096  B  01/10/2017 15:16:26    /data/mm-xart002/runfolders/johanhe_test_150821_M00485_0220_000000000-AG2UJ_archive Never #bce2592a-3bcb-4d5d-acbc-3170469ff23a
-        #16          4,096  B  01/10/2017 16:09:42    /data/mm-xart002/runfolders/johanhe_test_150821_M00485_0220_000000000-AG2UJ_archive Never #d1b51671-25b8-4bb1-85bf-f9d82082f0ef
         
-        #my_string.split('\n')
-        my_lines = p.stdout.readlines()
-        #my_match = os.path.join(monitored_dir, runfolder_archive)
-        log.debug("My lines: {}".format(my_lines))
-        #log.debug("My match: {}".format(my_match))
-        matched_lines = [line.strip() for line in my_lines if path_to_runfolder in line]
-        log.debug("Matched lines: {}".format(matched_lines))
-        latest_upload = matched_lines[-1:][0]
+        dsmc_output = p.stdout.readlines()
+        uploaded_versions = [line.strip() for line in dsmc_output if path_to_runfolder in line]
+        log.debug("Found the following uploaded versions of this archive: {}".format(uploaded_versions))
+        
+        # Uploads are chronologically sorted, with the latest upload last - which is the one
+        # we are interested in. 
+        latest_upload = matched_lines[-1:][0] 
+        # We need the description of this upload - which is the last field of the line. E.g. 
+        # 4,096  B  01/10/2017 16:47:24    /data/mm-xart002/runfolders/johanhe_test_150821_M00485_0220_000000000-AG2UJ_archive Never a33623ba-55ad-4034-9222-dae8801aa65e
         latest_descr = latest_upload.split()[-1:][0]
-        log.debug("Last upload: {}".format(latest_upload))
-        log.debug("Last descr: {}".format(latest_descr))
-
-        #status_end_point = "{0}://{1}{2}".format(
-        #    self.request.protocol,
-        #    self.request.host,
-        #    self.reverse_url("status", job_id))
+        log.debug("Latest uploaded version is {} with description {}".format(latest_upload, latest_descr))
 
         # Step 2 - check the difference of the uploaded version vs the local archive
 
@@ -127,8 +109,7 @@ class ReuploadHandler(BaseDsmcHandler):
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # TODO: This can deadlock according to https://docs.python.org/2/library/subprocess.html
         retval = p.wait()
-        my_lines = p.stdout.readlines()
-        log.debug("RAW uploaded data: {}".format(my_lines))
+        dsmc_output = p.stdout.readlines()
 
         # Take out the bytes and the filename from the output
         # convert raw output to bytes - first field in matched_lines
@@ -137,7 +118,6 @@ class ReuploadHandler(BaseDsmcHandler):
         matched_lines = [line.strip() for line in my_lines if path_to_runfolder in line]
         log.debug("RAW matched lines: {}".format(matched_lines))
 
-        # FIXME: build up this with dicts instead - makes it easier to compare. 
         # NB uploaded list contains folders as well, but when we check local content
         # we only look at the files, and ignore the folders.
         uploaded_files = {} #[line for line in matched_lines]
@@ -150,10 +130,9 @@ class ReuploadHandler(BaseDsmcHandler):
             uploaded_files[filename] = byte_size
 
         
-        log.debug("Uploaded files: {}".format(uploaded_files))
+        log.debug("Previously uploaded files for the archive are: {}".format(uploaded_files))
 
         # Then, get the expected filelist from us
-        # FIXME: Use a dict instead 
         local_files = {}
         for root, directories, filenames in os.walk(path_to_runfolder):
             for filename in filenames:
@@ -161,9 +140,9 @@ class ReuploadHandler(BaseDsmcHandler):
                 local_size = os.path.getsize(full_path)
                 local_files[full_path] = str(local_size)
         
-        log.debug("Local files {}".format(local_files))
+        log.debug("Local files for the archive are {}".format(local_files))
 
-        # Sort both files - then compare them. We do not need to sort them if we are using dicts!
+        # Sort both - then compare them. We do not need to sort them if we are using dicts!
         # We consider local files to be the truth - obviously. So if there are more data uploaded 
         # than present locally we ignore it. 
         reupload_files = []
@@ -216,14 +195,6 @@ class ReuploadHandler(BaseDsmcHandler):
         self.set_status(202, reason="started processing")
         self.write_object(response_data)     
 
-'''        
-
-        uniq_id = str(uuid.uuid4())
-        cmd = "dsmc archive {}/ -subdir=yes -description={}".format(path_to_runfolder, uniq_id)
-        job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir="/tmp", stdout="/tmp/stdout", stderr="/tmp/stderr")
-
-'''
-
 class UploadHandler(BaseDsmcHandler):
 
     """
@@ -267,9 +238,6 @@ class UploadHandler(BaseDsmcHandler):
         if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
             raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))
 
-        #request_data = json.loads(self.request.body)
-        #description = request_data["description"]
-
         path_to_runfolder = os.path.join(monitored_dir, runfolder_archive)
         dsmc_log_dir = self.config["dsmc_log_directory"]
         uniq_id = str(uuid.uuid4())
@@ -286,8 +254,6 @@ class UploadHandler(BaseDsmcHandler):
        # cmd = "export DSM_LOG={} && dsmc archive {} -subdir=yes -desc={}".format(dsmc_log_file,
        #                                                                          runfolder,
        #                                                                          description)
-        #cmd = "/usr/bin/dsmc q"
-        #dsmc archive <path to runfolder_archive>/ -subdir=yes -description=`uuidgen`
         
         #cmd = "dsmc archive {}/ -subdir=yes -description={}".format(path_to_runfolder, uniq_id)
         # FIXME: echo is just used when testing return codes locally. 
@@ -324,14 +290,10 @@ class GenChecksumsHandler(BaseDsmcHandler):
         if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
             raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))
 
-        #request_data = json.loads(self.request.body)
-        #description = request_data["description"]
-
         path_to_runfolder = os.path.join(monitored_dir, runfolder_archive)
 
         filename = "checksums_prior_to_pdc.md5"
         
-        #ssh <% $.host %> "cd <% $.runfolder %>_archive && find -L . -type f ! -path './checksums_prior_to_pdc.md5' -exec md5sum {} + > checksums_prior_to_pdc.md5"
         cmd = "cd {} && /usr/bin/find -L . -type f ! -path '{}' -exec /usr/bin/md5sum {{}} + > {}".format(path_to_runfolder, filename, filename)
         log.debug("Will now execute command {}".format(cmd))
         job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=monitored_dir, stdout="/tmp/checksum.log", stderr="/tmp/checksum.log") #FIXME: better log
@@ -345,8 +307,7 @@ class GenChecksumsHandler(BaseDsmcHandler):
             "job_id": job_id,
             "service_version": version,
             "link": status_end_point,
-            "state": State.STARTED}#,
-            #"dsmc_log": dsmc_log_file}
+            "state": State.STARTED}
 
         self.set_status(202, reason="started processing")
         self.write_object(response_data)
@@ -365,7 +326,7 @@ class CreateDirHandler(BaseDsmcHandler):
             sub_folders = [ name for name in os.listdir(monitored_dir)
                             if os.path.isdir(os.path.join(monitored_dir, name)) ]
             return runfolder in sub_folders
-        else:
+        else: 
             return False
 
     @staticmethod
@@ -392,7 +353,7 @@ class CreateDirHandler(BaseDsmcHandler):
             return False
 
         return True
-
+    
     @staticmethod
     def _verify_dest(destdir, remove=False): 
         log.debug("Checking to see if {} exists".format(destdir))
@@ -408,37 +369,34 @@ class CreateDirHandler(BaseDsmcHandler):
         else: 
             return True
 
+    """ 
+    Symlink _archive dir to runfolder, and filter out some stuff. 
+    """
     @staticmethod
-    # Copies src dir tree to dest dir, and excludes a dir if it fullfills. 
-    def _create_dest_dir(srcdir, destdir, exclude=None): 
+    def _create_archive(oldtree, newtree, exclude_dirs=[], exclude_extensions=[]): 
+        try: 
+            content = os.listdir(oldtree)
 
-        def _ignore_all_dirs(directory, content): 
-            return set(f for f in content if not os.path.isdir(os.path.join(directory, f))) 
+            for entry in content: 
+                oldpath = os.path.join(oldtree, entry)
+                newpath = os.path.join(newtree, entry)
 
-        shutil.copytree(source, dest, ignore=_ignore_all_dirs)
+                if os.path.isdir(oldpath) and entry not in exclude_dirs:
+                    os.mkdir(newpath)
+                    CreateDirHandler._create_archive(oldpath, newpath, exclude_dirs, exclude_extensions)
+                elif os.path.isfile(oldpath):
+                    _, ext = os.path.splitext(oldpath)
 
-        #os.makedirs(destdir)
-
-        #for entry in os.listdir(srcdir):
-            #if not entry in exclude: 
-             #   os.symlink(os.path.join(srcdir, entry), os.path.join(destdir, entry))
-    
-        #log.debug("Archive directory {} created successfully.".format(destdir))
-
-    @staticmethod
-    def _create_dest_file_links(srcdir, destdir, exclude=None):
-        pass
-
-    @staticmethod
-    def _create_dest_archive(srcdir, destdir):
-        cmd = "/bin/cp -rs {} {}"
-        # FIXME: Check return code 
-        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        # TODO: This can deadlock according to https://docs.python.org/2/library/subprocess.html
-        retval = p.wait()
-        #my_lines = p.stdout.readlines()
-        return retval 
-
+                    if ext not in exclude_extensions: 
+                        os.symlink(oldpath, newpath)
+                    else: 
+                        log.debug("Skipping {} because it is excluded".format(oldpath))
+                else: 
+                    log.debug("Skipping {} because it is excluded".format(oldpath))
+        except OSError, msg: 
+            errmsg = "Error when creating archive directory: {}".format(msg)
+            log.debug(errmsg)
+            raise ArteriaUsageException(errmsg)       
 
     """
     Create a directory to be used for archiving.
@@ -450,88 +408,56 @@ class CreateDirHandler(BaseDsmcHandler):
     """
     def post(self, runfolder):
 
-  #destdir = srcdir + "_archive" 
-  #verify_src(srcdir, threshold)
-  #verify_dest(destdir, remove)
-  #create_dest(srcdir, destdir, exclude)
-
         monitored_dir = self.config["monitored_directory"]
-        path_to_runfolder = os.path.join(monitored_dir, runfolder)
-        #/proj/ngi2016001/nobackup/arteria/pdc_archive_links
-        path_to_archive_root = "/tmp/apa/pdc_archive_links"
-        path_to_archive = os.path.join(path_to_archive_root, runfolder) + "_archive"
+        path_to_runfolder = os.path.abspath(os.path.join(monitored_dir, runfolder))
+        #TODO: On Irma we want /proj/ngi2016001/nobackup/arteria/pdc_archive_links
+        path_to_archive_root = self.config["path_to_archive_root"]
+        #path_to_archive_root = "/tmp/apa/pdc_archive_links"
+        path_to_archive = os.path.abspath(os.path.join(path_to_archive_root, runfolder) + "_archive")
 
         request_data = json.loads(self.request.body)
-        log.debug("Body is {}".format(request_data))
+        # TODO: Catch when no data is included
         remove = eval(request_data["remove"]) # str2bool
-        log.debug("Remove is {}".format(remove))
         exclude_dirs = request_data["exclude_dirs"]
         exclude_extensions = request_data["exclude_extensions"]
 
+        # FIXME: Dont raise here. 
         if not CreateDirHandler._validate_runfolder_exists(runfolder, monitored_dir):
-            raise ArteriaUsageException("{} is not found under {}!".format(runfolder, monitored_dir))
+            # TODO: Write a wrapper that can print out this. 
+            response_data = {"service_version": version, "state": State.ERROR}
+            self.set_status(500, reason="{} is not found under {}!".format(runfolder_archive, monitored_dir))
+            self.write_object(response_data)
+            return
 
         # We want to verify that the Unaligned folder is setup correctly when running on biotanks.
         my_host = self.request.headers.get('Host')            
+        # FIXME: Don't raise here
         if "biotank" in my_host and not CreateDirHandler._verify_unaligned(path_to_runfolder): 
-            raise ArteriaUsageException("Unaligned directory link {} is broken or missing!".format(os.path.join(path_to_runfolder, "Unaligned")))
+            response_data = {"service_version": version, "state": State.ERROR}
+            self.set_status(500, reason="Unaligned directory link {} is broken or missing!".format(os.path.join(path_to_runfolder, "Unaligned")))
+            self.write_object(response_data)      
+            return      
 
+        # FIXME: Don't raise here
         if not CreateDirHandler._verify_dest(path_to_archive, remove): 
-            raise ArteriaUsageException("Error when checking the destination path.")
-        
-        log.debug("Copying {} to {}".format(path_to_runfolder, path_to_archive))
-        cmd = "/bin/cp -rs {}/ {}".format(path_to_runfolder, path_to_archive)
-        # FIXME: Check return code 
-        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        # TODO: This can deadlock according to https://docs.python.org/2/library/subprocess.html
-        retval = p.wait()
-        
-        if retval != 0: 
-            raise ArteriaUsageException("Error when symlinking {}".format(p.stdout.readlines()))
+            response_data = {"service_version": version, "state": State.ERROR}
+            self.set_status(500, reason="Error when checking the destination path.")
+            self.write_object(response_data)      
+            return      
+              
+        # Raise exception? Print out error to user client. 
+        try: 
+            os.mkdir(path_to_archive)
+            CreateDirHandler._create_archive(path_to_runfolder, path_to_archive, exclude_dirs, exclude_extensions)
+        except ArteriaUsageException, msg: 
+            response_data = {"service_version": version, "state": State.ERROR}
+            self.set_status(500, reason="Error when creating archive dir: {}".format(msg))
+            self.write_object(response_data)      
+            return                  
 
-        # Now we want to eliminate some of our files from the archive 
-        for root, dirs, files in os.walk(path_to_archive):
-            for name in dirs: 
-                if name in exclude_dirs: 
-                    log.debug("Removing {} from {}".format(name, root))
-                    shutil.rmtree(os.path.join(root, name))
+        response_data = {"service_version": version, "state": State.DONE}
 
-            for name in files:
-                for ext in exclude_extensions: 
-                    if name.endswith(ext):
-                        log.debug("Removing {} from {}".format(name, root))
-                        os.remove(os.path.join(root, name))
-
-        #Risk these will take long time
-        #_create_dest_dir(srcdir, destdir, exclude)
-        #_create_dest_file_links(srcdir, destdir, exclude)
-        #if not CreateDirHandler._create_dest_archive(path_to_runfolder, path_to_archive)
-
-       # cmd = "export DSM_LOG={} && dsmc archive {} -subdir=yes -desc={}".format(dsmc_log_file,
-       #                                                                          runfolder,
-       #                                                                          description)
-        #cmd = "/usr/bin/dsmc q"
-        #dsmc archive <path to runfolder_archive>/ -subdir=yes -description=`uuidgen`
-        
-        #cmd = "dsmc archive {}/ -subdir=yes -description={}".format(path_to_runfolder, uniq_id)
-        # FIXME: echo is just used when testing return codes locally. 
-        #cmd = "echo 'ANS1809W ANS2000W Test run started.' && echo ANS9999W && echo ANS1809W && exit 8" #false
-#        cmd = "echo 'ANS1809W Test run started.' && echo ANS1809W && exit 8"
- #       job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=monitored_dir, stdout=dsmc_log_file, stderr=dsmc_log_file)
-
-  #      status_end_point = "{0}://{1}{2}".format(
-   #         self.request.protocol,
-    #        self.request.host,
-     #       self.reverse_url("status", job_id))
-
-        response_data = {
-            #"job_id": job_id,
-            "service_version": version,
-            #"link": status_end_point,
-            "state": State.DONE}#,
-            #"dsmc_log": dsmc_log_file}
-
-        self.set_status(202, reason="finished processing")
+        self.set_status(200, reason="Finished processing.")
         self.write_object(response_data)
 
 
@@ -550,7 +476,7 @@ class StatusHandler(BaseDsmcHandler):
         if job_id:
             status = {"state": self.runner_service.status(job_id)}
         else:
-            # FIXME: Update the correct status for all jobs; the filtering in jobrunner doesn't work here
+            # TODO: Update the correct status for all jobs; the filtering in jobrunner doesn't work here.
             all_status = self.runner_service.status_all()
             status_dict = {}
             for k, v in all_status.iteritems():
@@ -559,28 +485,28 @@ class StatusHandler(BaseDsmcHandler):
 
         self.write_json(status)
 
-#class StopHandler(BaseDsmcHandler):
-#    """
-#    Stop one or all jobs.
-#    """
-#
-#    def post(self, job_id):
-#        """
-#        Stops the job with the specified id.
-#        :param job_id: of job to stop, or set to "all" to stop all jobs
-#        """
-#        try:
-#            if job_id == "all":
-#                log.info("Attempting to stop all jobs.")
-#                self.runner_service.stop_all()
-#                log.info("Stopped all jobs!")
-#                self.set_status(200)
-#            elif job_id:
-#                log.info("Attempting to stop job: {}".format(job_id))
-#                self.runner_service.stop(job_id)
-#                self.set_status(200)
-#            else:
-#                ArteriaUsageException("Unknown job to stop")
-#        except ArteriaUsageException as e:
-#            log.warning("Failed stopping job: {}. Message: ".format(job_id, e.message))
-#            self.send_error(500, reason=e.message)
+class StopHandler(BaseDsmcHandler):
+    """
+    Stop one or all jobs.
+    """
+
+    def post(self, job_id):
+        """
+        Stops the job with the specified id.
+        :param job_id: of job to stop, or set to "all" to stop all jobs
+        """
+        try:
+            if job_id == "all":
+                log.info("Attempting to stop all jobs.")
+                self.runner_service.stop_all()
+                log.info("Stopped all jobs!")
+                self.set_status(200)
+            elif job_id:
+                log.info("Attempting to stop job: {}".format(job_id))
+                self.runner_service.stop(job_id)
+                self.set_status(200)
+            else:
+                ArteriaUsageException("Unknown job to stop")
+        except ArteriaUsageException as e:
+            log.warning("Failed stopping job: {}. Message: ".format(job_id, e.message))
+            self.send_error(500, reason=e.message)
