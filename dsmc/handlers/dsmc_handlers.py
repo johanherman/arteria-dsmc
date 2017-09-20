@@ -233,7 +233,7 @@ class UploadHandler(BaseDsmcHandler):
     """
     def post(self, runfolder_archive):
 
-        monitored_dir = self.config["monitored_directory"]
+        monitored_dir = self.config["path_to_archive_root"]
 
         if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
             raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))
@@ -281,22 +281,21 @@ class GenChecksumsHandler(BaseDsmcHandler):
     # TODO: Add helper functions - refactor with other base class 
 
     def post(self, runfolder_archive):
+        path_to_archive_root = os.path.abspath(self.config["path_to_archive_root"])
+        checksum_log = os.path.abspath(os.path.join(self.config["dsmc_log_directory"], "checksum.log"))
+        
+        if not UploadHandler._validate_runfolder_exists(runfolder_archive, path_to_archive_root):
+            response_data = {"service_version": version, "state": State.ERROR}
+            self.set_status(500, reason="{} is not found under {}!".format(runfolder_archive, path_to_archive_root))
+            self.write_object(response_data)
+            return
 
-        # FIXME: This needs to be an other path for archives
-        #monitored_dir = self.config["monitored_directory"]
-        path_to_archive_root = "/tmp/apa/pdc_archive_links"
-        monitored_dir = path_to_archive_root
-
-        if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
-            raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))
-
-        path_to_runfolder = os.path.join(monitored_dir, runfolder_archive)
-
+        path_to_archive = os.path.join(path_to_archive_root, runfolder_archive)
         filename = "checksums_prior_to_pdc.md5"
         
-        cmd = "cd {} && /usr/bin/find -L . -type f ! -path '{}' -exec /usr/bin/md5sum {{}} + > {}".format(path_to_runfolder, filename, filename)
+        cmd = "cd {} && /usr/bin/find -L . -type f ! -path '{}' -exec /usr/bin/md5sum {{}} + > {}".format(path_to_archive, filename, filename)
         log.debug("Will now execute command {}".format(cmd))
-        job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=monitored_dir, stdout="/tmp/checksum.log", stderr="/tmp/checksum.log") #FIXME: better log
+        job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=path_to_archive_root, stdout=checksum_log, stderr=checksum_log) 
 
         status_end_point = "{0}://{1}{2}".format(
             self.request.protocol,
@@ -412,7 +411,6 @@ class CreateDirHandler(BaseDsmcHandler):
         path_to_runfolder = os.path.abspath(os.path.join(monitored_dir, runfolder))
         #TODO: On Irma we want /proj/ngi2016001/nobackup/arteria/pdc_archive_links
         path_to_archive_root = self.config["path_to_archive_root"]
-        #path_to_archive_root = "/tmp/apa/pdc_archive_links"
         path_to_archive = os.path.abspath(os.path.join(path_to_archive_root, runfolder) + "_archive")
 
         request_data = json.loads(self.request.body)
@@ -432,6 +430,7 @@ class CreateDirHandler(BaseDsmcHandler):
         # We want to verify that the Unaligned folder is setup correctly when running on biotanks.
         my_host = self.request.headers.get('Host')            
         # FIXME: Don't raise here
+        # FIXME: Make testcase for biotank stuff. 
         if "biotank" in my_host and not CreateDirHandler._verify_unaligned(path_to_runfolder): 
             response_data = {"service_version": version, "state": State.ERROR}
             self.set_status(500, reason="Unaligned directory link {} is broken or missing!".format(os.path.join(path_to_runfolder, "Unaligned")))

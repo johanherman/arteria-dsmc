@@ -56,21 +56,25 @@ class TestDsmcHandlers(AsyncHTTPTestCase):
         not_valid = UploadHandler._validate_runfolder_exists("non-existant", self.dummy_config["monitored_directory"])
         self.assertFalse(not_valid)
 
-    def test_start_upload(self):
+    @mock.patch("dsmc.lib.jobrunner.LocalQAdapter.start")
+    def test_start_upload(self, mock_start):
+        job_id = 24
+        mock_start.return_value = job_id
+
         #body = {"path_to_md5_sum_file": "md5_checksums"}
         # Set monitored_dir to test/resources
         response = self.fetch(self.API_BASE + "/upload/test_archive", method="POST", allow_nonstandard_methods=True)#,
             #body=json_encode(body))
 
         json_resp = json.loads(response.body)
-        job_id = 1
+        #job_id = 1
 
         self.assertEqual(response.code, 202)
         self.assertEqual(json_resp["job_id"], job_id)
         self.assertEqual(json_resp["service_version"], dsmc_version)
 
-        expected_link = "http://localhost:{0}/api/1.0/status/{1}".format(self.get_http_port(), job_id)
-        self.assertEqual(json_resp["link"], expected_link)
+        expected_link = "http://localhost:{0}/api/1.0/status/".format(self.get_http_port())
+        self.assertTrue(expected_link in json_resp["link"])
         self.assertEqual(json_resp["state"], State.STARTED)
         # TODO: How to check the randomly generated file?  Clean it, and then check that one file has been created? 
         # TODO: And how to check when we're running with the real dsmc? Stub it somehow? 
@@ -160,9 +164,23 @@ class TestDsmcHandlers(AsyncHTTPTestCase):
         import shutil
         shutil.rmtree(archive_path)
         
+    @mock.patch("dsmc.lib.jobrunner.LocalQAdapter.start")
+    def test_generate_checksum(self, mock_start): 
+        job_id = 42
+        mock_start.return_value = job_id
 
-    def test_generate_checksum(self): 
-        pass
+        path_to_archive = os.path.abspath(os.path.join(self.dummy_config["path_to_archive_root"], "test_archive"))
+        checksum_log = os.path.abspath(os.path.join(self.dummy_config["dsmc_log_directory"], "checksum.log"))
+        filename = "checksums_prior_to_pdc.md5"
+
+        response = self.fetch(self.API_BASE + "/gen_checksums/test_archive", method="POST", allow_nonstandard_methods=True) #body=json_encode(body))
+        json_resp = json.loads(response.body)
+
+        expected_cmd = "cd {} && /usr/bin/find -L . -type f ! -path '{}' -exec /usr/bin/md5sum {{}} + > {}".format(path_to_archive, filename, filename)
+
+        self.assertEqual(json_resp["state"], State.STARTED)
+        self.assertEqual(json_resp["job_id"], job_id)
+        mock_start.assert_called_with(expected_cmd, run_dir=os.path.abspath(self.dummy_config["path_to_archive_root"]), nbr_of_cores=1, stderr=checksum_log, stdout=checksum_log)
     
     def test_reupload(self): 
         pass
