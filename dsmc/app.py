@@ -6,12 +6,14 @@ from arteria.web.app import AppService
 from dsmc.handlers.dsmc_handlers import VersionHandler, UploadHandler, StatusHandler, ReuploadHandler, CreateDirHandler, GenChecksumsHandler#, StopHandler
 from dsmc.lib.jobrunner import LocalQAdapter
 
-# TODO: Cleanup comments
-# FIXME: Write test cases!!!
-# FIXME: Better logging. 
-# FIXME: Better documentation. 
-# FIXME: Integrate with Arteria workflows. 
-# FIXME: Check how many TSM jobs we can queue, and how many can run in 
+# FIXME: 1. Write test cases!!!
+# FIXME: 2. Refactor handlers
+# FIXME: 3. Better documentation. 
+# FIXME: 4. Integrate with Arteria workflows. 
+
+# TODO: Better logging. 
+#
+# TODO: Check how many TSM jobs we can queue, and how many can run in 
 # parallel. We should define this somewhere. 
 
 

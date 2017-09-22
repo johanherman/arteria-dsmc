@@ -6,6 +6,7 @@ import uuid
 import subprocess
 import shutil
 import re 
+import pdb;
 
 from arteria.exceptions import ArteriaUsageException
 from arteria.web.state import State
@@ -46,95 +47,91 @@ class VersionHandler(BaseDsmcHandler):
         self.write_object({"version": version })
 
 
-class ReuploadHandler(BaseDsmcHandler):
-    # TODO: Refactor out
-    @staticmethod
-    def _validate_runfolder_exists(runfolder, monitored_dir):
-        if os.path.isdir(monitored_dir):
-            sub_folders = [ name for name in os.listdir(monitored_dir)
-                            if os.path.isdir(os.path.join(monitored_dir, name)) ]
-            return runfolder in sub_folders
-        else:
-            return False
-
-    def post(self, runfolder_archive): 
-        monitored_dir = self.config["monitored_directory"]
-
-        if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
-            raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))            
-
-        path_to_runfolder = os.path.join(monitored_dir, runfolder_archive)
-        uniq_id = str(uuid.uuid4())        
-        dsmc_log_dir = self.config["dsmc_log_directory"]
-
-        if not UploadHandler._is_valid_log_dir(dsmc_log_dir):
-            raise ArteriaUsageException("{} is not a directory!".format(dsmc_log_dir))
-
-        dsmc_log_file = "{}/dsmc_{}_{}-{}".format(dsmc_log_dir,
-                                                      runfolder_archive,
-                                                      uniq_id,
-                                                      datetime.datetime.now().isoformat())            
-
-
-        # Step 1 - fetch the description of the last uploaded version of this archive
-
-        #dsmc q ar /proj/ngi2016001/incoming/${RUNFOLDER} | grep "/proj/ngi2016001/incoming" | awk '{print $3" "$NF}'
-
-
-        #cmd = "dsmc q ar {}".format(path_to_runfolder)
-        cmd = "cat /tmp/apa/descr-list.txt"
-        # TODO: Check that process completed successfully
-        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        # TODO: This can deadlock according to https://docs.python.org/2/library/subprocess.html
-        retval = p.wait()
+class ReuploadHelper(object):
+    """
+    Does the same as 
+            #dsmc q ar /proj/ngi2016001/incoming/${RUNFOLDER} | grep "/proj/ngi2016001/incoming" | awk '{print $3" "$NF}'
+    """
+    # TODO: What to return if nothing is found? 
+    # TODO: Check that process completed successfully    
+    def get_pdc_descr(self, path_to_archive):     
+        cmd = "dsmc q ar {}".format(path_to_archive)
+        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        dsmc_output = p.stdout.readlines()
-        uploaded_versions = [line.strip() for line in dsmc_output if path_to_runfolder in line]
+        dsmc_out, dsmc_err = p.communicate()
+        dsmc_out = dsmc_out.splitlines()
+
+        # if dsmc_err: 
+        #if process.returncode:
+            #raise RuntimeError('something bad happened')
+
+        uploaded_versions = [line.strip() for line in dsmc_out if path_to_archive in line]
         log.debug("Found the following uploaded versions of this archive: {}".format(uploaded_versions))
         
-        # Uploads are chronologically sorted, with the latest upload last - which is the one
-        # we are interested in. 
-        latest_upload = matched_lines[-1:][0] 
-        # We need the description of this upload - which is the last field of the line. E.g. 
+        # Uploads are chronologically sorted, with the latest upload last.
+        latest_upload = uploaded_versions[-1:][0] 
+
+        # We need the description of this upload: the last field. E.g.: 
         # 4,096  B  01/10/2017 16:47:24    /data/mm-xart002/runfolders/johanhe_test_150821_M00485_0220_000000000-AG2UJ_archive Never a33623ba-55ad-4034-9222-dae8801aa65e
         latest_descr = latest_upload.split()[-1:][0]
         log.debug("Latest uploaded version is {} with description {}".format(latest_upload, latest_descr))
 
-        # Step 2 - check the difference of the uploaded version vs the local archive
+        return latest_descr
 
-        # Step 1, get filelist from PDC      
-        #cmd = "dsmc q ar {} -subdir=yes -description={}".format(path_to_runfolder, latest_descr)
-        cmd = "cat /tmp/apa/runfolder-content.txt"
+    """
+    Does the same as 
+         
+    """
+    def get_pdc_filelist(self, path_to_archive, descr): 
+        cmd = "dsmc q ar {} -subdir=yes -description={}".format(path_to_archive, descr)
+
         # TODO: Check that process completed successfully
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        # TODO: This can deadlock according to https://docs.python.org/2/library/subprocess.html
-        retval = p.wait()
-        dsmc_output = p.stdout.readlines()
+ 
+        dsmc_out, dsmc_err = p.communicate()
+        dsmc_out = dsmc_out.splitlines()
+        # if dsmc_err: 
+        #if process.returncode:
+            #raise RuntimeError('something bad happened')        
 
         # Take out the bytes and the filename from the output
         # convert raw output to bytes - first field in matched_lines
         #
         # Get the lines containing the path. Then take out the field nr 1 and 5
-        matched_lines = [line.strip() for line in my_lines if path_to_runfolder in line]
+        matched_lines = [line.strip() for line in dsmc_out if path_to_archive in line]
         log.debug("RAW matched lines: {}".format(matched_lines))
 
         # NB uploaded list contains folders as well, but when we check local content
         # we only look at the files, and ignore the folders.
         uploaded_files = {} #[line for line in matched_lines]
 
+        # Line looks like
+        #4,096  B  2017-07-27 17.48.34    /data/mm-xart002/runfolders/johanhe_test_150821_M00485_0220_000000000-AG2UJ_archive/Config Never e374bd6b-ab36-4f41-94d3-f4eaea9f30d4
+        # but sometimes it can be "4 096", depending on the OS locale. 
         for line in matched_lines: 
             elements = line.split()
-            byte_size = elements[0].replace(",", "")
-            filename = elements[4]
-            # Check so that the key doesn't exist first 
+            
+            if "," in elements[0]: 
+                byte_size = elements[0].replace(",", "")
+                filename = elements[4]
+            elif elements[0] == "0": 
+                byte_size = 0
+                filename = elements[4]
+            else: 
+                byte_size = "{}{}".format(elements[0], elements[1])
+                filename = elements[5]
+            
+            # TODO: Check so that the key doesn't exist first?
+            # E.g. if uploaded twice with the same descr 
             uploaded_files[filename] = byte_size
-
         
         log.debug("Previously uploaded files for the archive are: {}".format(uploaded_files))
 
-        # Then, get the expected filelist from us
+        return uploaded_files
+
+    def get_local_filelist(self, path_to_archive): 
         local_files = {}
-        for root, directories, filenames in os.walk(path_to_runfolder):
+        for root, directories, filenames in os.walk(path_to_archive):
             for filename in filenames:
                 full_path = os.path.join(root, filename)
                 local_size = os.path.getsize(full_path)
@@ -142,6 +139,9 @@ class ReuploadHandler(BaseDsmcHandler):
         
         log.debug("Local files for the archive are {}".format(local_files))
 
+        return local_files
+
+    def get_files_to_reupload(self, local_files, uploaded_files):
         # Sort both - then compare them. We do not need to sort them if we are using dicts!
         # We consider local files to be the truth - obviously. So if there are more data uploaded 
         # than present locally we ignore it. 
@@ -159,40 +159,108 @@ class ReuploadHandler(BaseDsmcHandler):
                 log.info("::: ERROR ::: Local file has NOT been uploaded {}".format(k))
                 reupload_files.append(k)
 
+        return reupload_files
+
+    # TODO: Return something sensible. Error checking. 
+    def reupload(self, reupload_files, descr, uniq_id, run_dir, dsmc_log_file, runner_service):
+        log.info("Will now reupload the following files: {}".format(reupload_files))
+
+        dsmc_reupload = os.path.join("/tmp", "arteria-dsmc-reupload-{}".format(uniq_id))
+
+        with open(dsmc_reupload, 'wa') as f:
+            for r in reupload_files:
+                f.write('"{}"\n'.format(r))
+
+        log.debug("Written files to reupload to {}".format(dsmc_reupload))
+
+        #dsmc archive -descr=${DESCR} -filelist=${FILELIST} 2>&1 | tee `pwd`/${FILELIST}.tsm_log
+        cmd = "dsmc archive -filelist={} -description={}".format(dsmc_reupload, descr)
+        log.debug("Running command {}".format(cmd))
+        job_id = runner_service.start(cmd, nbr_of_cores=1, run_dir=run_dir, stdout=dsmc_log_file, stderr=dsmc_log_file)
+
+        return job_id
+
+class ReuploadHandler(BaseDsmcHandler):
+    # TODO: Refactor out
+    @staticmethod
+    def _validate_runfolder_exists(runfolder, monitored_dir):
+        if os.path.isdir(monitored_dir):
+            sub_folders = [ name for name in os.listdir(monitored_dir)
+                            if os.path.isdir(os.path.join(monitored_dir, name)) ]
+            return runfolder in sub_folders
+        else:
+            return False
+
+    def post(self, runfolder_archive): 
+        monitored_dir = self.config["path_to_archive_root"]
+        helper = ReuploadHelper()
+
+        if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
+            response_data = {"service_version": version, "state": State.ERROR}
+            self.set_status(500, reason="{} is not found under {}!".format(runfolder_archive, path_to_archive_root))
+            self.write_object(response_data)
+            return     
+
+        path_to_archive = os.path.join(monitored_dir, runfolder_archive)
+        uniq_id = str(uuid.uuid4())        
+        dsmc_log_dir = self.config["dsmc_log_directory"]
+
+        if not UploadHandler._is_valid_log_dir(dsmc_log_dir):
+            response_data = {"service_version": version, "state": State.ERROR}
+            self.set_status(500, reason="{} is not a directory!".format(dsmc_log_dir))
+            self.write_object(response_data)
+            return                 
+
+        # FIXME: log file not used atm
+        dsmc_log_file = "{}/dsmc_{}_{}-{}".format(dsmc_log_dir,
+                                                      runfolder_archive,
+                                                      uniq_id,
+                                                      datetime.datetime.now().isoformat())            
+
+        #pdb.set_trace() 
+
+        # Step 1 - fetch the description of the last uploaded version of this archive
+        descr = helper.get_pdc_descr(path_to_archive)
+
+        # Step 2 - check the difference of the uploaded version vs the local archive
+        # Step 2a, get filelist from PDC      
+        uploaded_files = helper.get_pdc_filelist(path_to_archive, descr)
+
+        # 2b, Then, get the expected filelist from us
+        local_files = helper.get_local_filelist(path_to_archive)
+
+        # 2c, Check if we have to reupload anything
+        reupload_files = helper.get_files_to_reupload(local_files, uploaded_files)
+
         # Step 3 - upload the missing files with the previous description
         if reupload_files: 
-            log.info("Will now reupload the following files: {}".format(reupload_files))
-
-            # TODO: Better path? 
-            dsmc_reupload = os.path.join("/tmp", "dsmc-reupload-{}".format(uniq_id))
-            with open(dsmc_reupload, 'wa') as f:
-                for r in reupload_files:  
-                    f.write('"{}"\n'.format(r))
-
-            log.debug("Written files to reupload to {}".format(dsmc_reupload))
-
-            #dsmc archive -descr=${DESCR} -filelist=${FILELIST} 2>&1 | tee `pwd`/${FILELIST}.tsm_log
-            cmdtwo = "dsmc archive -filelist={} -description={}".format(dsmc_reupload, latest_descr)
-            cmd = "echo {}".format(cmdtwo)
-            log.debug("Running command {}".format(cmdtwo))
-            job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=monitored_dir, stdout=dsmc_log_file, stderr=dsmc_log_file)
-
-        else: 
-            log.debug("Nothing to do - everything already uploaded.")
-
-        status_end_point = "{0}://{1}{2}".format(
+            job_id = helper.reupload(reupload_files, descr, uniq_id, monitored_dir, dsmc_log_file, self.runner_service)
+            log.debug("job_id {}".format(job_id))
+        
+            status_end_point = "{0}://{1}{2}".format(
             self.request.protocol,
             self.request.host,
             self.reverse_url("status", job_id))
 
-        response_data = {
-            "job_id": job_id,
+            response_data = {
+                "job_id": job_id,
+                "service_version": version,
+                "link": status_end_point,
+                "state": State.STARTED,
+                "dsmc_log": dsmc_log_file}
+
+            self.set_status(202, reason="started reuploading")
+        else: 
+            log.debug("Nothing to do - everything already uploaded.")
+
+            response_data = {
             "service_version": version,
             "link": status_end_point,
-            "state": State.STARTED,
+            "state": State.DONE,
             "dsmc_log": dsmc_log_file}
 
-        self.set_status(202, reason="started processing")
+            self.set_status(200, reason="nothing to reupload")
+        
         self.write_object(response_data)     
 
 class UploadHandler(BaseDsmcHandler):
@@ -236,7 +304,10 @@ class UploadHandler(BaseDsmcHandler):
         monitored_dir = self.config["path_to_archive_root"]
 
         if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
-            raise ArteriaUsageException("{} is not found under {}!".format(runfolder_archive, monitored_dir))
+            response_data = {"service_version": version, "state": State.ERROR}
+            self.set_status(500, reason="{} is not found under {}!".format(runfolder_archive, path_to_archive_root))
+            self.write_object(response_data)
+            return
 
         path_to_runfolder = os.path.join(monitored_dir, runfolder_archive)
         dsmc_log_dir = self.config["dsmc_log_directory"]
@@ -245,6 +316,7 @@ class UploadHandler(BaseDsmcHandler):
         if not UploadHandler._is_valid_log_dir(dsmc_log_dir):
             raise ArteriaUsageException("{} is not a directory!".format(dsmc_log_dir))
 
+        # TODO: Need to put the logs in the commands as well. 
         dsmc_log_file = "{}/dsmc_{}_{}-{}".format(dsmc_log_dir,
                                                       runfolder_archive,
                                                       uniq_id,
