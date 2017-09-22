@@ -327,10 +327,10 @@ class UploadHandler(BaseDsmcHandler):
        #                                                                          runfolder,
        #                                                                          description)
         
-        #cmd = "dsmc archive {}/ -subdir=yes -description={}".format(path_to_runfolder, uniq_id)
+        cmd = "dsmc archive {}/ -subdir=yes -description={}".format(path_to_runfolder, uniq_id)
         # FIXME: echo is just used when testing return codes locally. 
         #cmd = "echo 'ANS1809W ANS2000W Test run started.' && echo ANS9999W && echo ANS1809W && exit 8" #false
-        cmd = "echo 'ANS1809W Test run started.' && echo ANS1809W && exit 8"
+        #cmd = "echo 'ANS1809W Test run started.' && echo ANS1809W && exit 8"
         job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=monitored_dir, stdout=dsmc_log_file, stderr=dsmc_log_file)
 
         status_end_point = "{0}://{1}{2}".format(
