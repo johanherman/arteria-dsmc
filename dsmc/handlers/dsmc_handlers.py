@@ -488,8 +488,8 @@ class CreateDirHandler(BaseDsmcHandler):
         request_data = json.loads(self.request.body)
         # TODO: Catch when no data is included
         remove = eval(request_data["remove"]) # str2bool
-        exclude_dirs = request_data["exclude_dirs"]
-        exclude_extensions = request_data["exclude_extensions"]
+        exclude_dirs = self.config["exclude_dirs"]
+        exclude_extensions = self.config["exclude_extensions"]
 
         # FIXME: Dont raise here. 
         if not CreateDirHandler._validate_runfolder_exists(runfolder, monitored_dir):
