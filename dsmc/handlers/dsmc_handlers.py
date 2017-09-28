@@ -495,7 +495,9 @@ class CreateDirHandler(BaseDsmcHandler):
         if not CreateDirHandler._validate_runfolder_exists(runfolder, monitored_dir):
             # TODO: Write a wrapper that can print out this. 
             response_data = {"service_version": version, "state": State.ERROR}
-            self.set_status(500, reason="{} is not found under {}!".format(runfolder_archive, monitored_dir))
+            reason = "{} is not found under {}!".format(runfolder_archive, monitored_dir)
+            log.debug("Error encountered when validating runfolder: {}".format(reason))
+            self.set_status(500, reason=reason)
             self.write_object(response_data)
             return
 
@@ -505,14 +507,18 @@ class CreateDirHandler(BaseDsmcHandler):
         # FIXME: Make testcase for biotank stuff. 
         if "biotank" in my_host and not CreateDirHandler._verify_unaligned(path_to_runfolder): 
             response_data = {"service_version": version, "state": State.ERROR}
-            self.set_status(500, reason="Unaligned directory link {} is broken or missing!".format(os.path.join(path_to_runfolder, "Unaligned")))
+            reason = "Unaligned directory link {} is broken or missing!".format(os.path.join(path_to_runfolder, "Unaligned"))
+            log.debug("Error encountered when validating Unaligned: {}".format(reason))
+            self.set_status(500, reason=reason)
             self.write_object(response_data)      
             return      
 
         # FIXME: Don't raise here
         if not CreateDirHandler._verify_dest(path_to_archive, remove): 
             response_data = {"service_version": version, "state": State.ERROR}
-            self.set_status(500, reason="Error when checking the destination path.")
+            reason = "Error when checking the destination path {} (remove={}).".format(path_to_archive, remove)
+            log.debug("Error encountered when validating Unaligned: {}".format(reason))
+            self.set_status(500, reason=reason)
             self.write_object(response_data)      
             return      
               
@@ -522,7 +528,9 @@ class CreateDirHandler(BaseDsmcHandler):
             CreateDirHandler._create_archive(path_to_runfolder, path_to_archive, exclude_dirs, exclude_extensions)
         except ArteriaUsageException, msg: 
             response_data = {"service_version": version, "state": State.ERROR}
-            self.set_status(500, reason="Error when creating archive dir: {}".format(msg))
+            reason = "Error when creating archive dir: {}".format(msg)
+            log.debug(reason)
+            self.set_status(500, reason=reason)
             self.write_object(response_data)      
             return                  
 
