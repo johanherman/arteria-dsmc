@@ -528,7 +528,7 @@ class CreateDirHandler(BaseDsmcHandler):
         if not CreateDirHandler._verify_dest(path_to_archive, remove): 
             response_data = {"service_version": version, "state": State.ERROR}
             reason = "Error when checking the destination path {} (remove={}).".format(path_to_archive, remove)
-            log.debug("Error encountered when validating Unaligned: {}".format(reason))
+            log.debug(reason)
             self.set_status(500, reason=reason)
             self.write_object(response_data)      
             return      
