@@ -479,17 +479,24 @@ class CreateDirHandler(BaseDsmcHandler):
     """
     def post(self, runfolder):
 
+        log.debug("Fetching configuration...")
+
         monitored_dir = self.config["monitored_directory"]
         path_to_runfolder = os.path.abspath(os.path.join(monitored_dir, runfolder))
         #TODO: On Irma we want /proj/ngi2016001/nobackup/arteria/pdc_archive_links
         path_to_archive_root = self.config["path_to_archive_root"]
         path_to_archive = os.path.abspath(os.path.join(path_to_archive_root, runfolder) + "_archive")
 
+        exclude_dirs = self.config["exclude_dirs"]
+        exclude_extensions = self.config["exclude_extensions"]
+
+        log.debug("Parsing data from HTTP request...")
+
         request_data = json.loads(self.request.body)
         # TODO: Catch when no data is included
         remove = eval(request_data["remove"]) # str2bool
-        exclude_dirs = self.config["exclude_dirs"]
-        exclude_extensions = self.config["exclude_extensions"]
+
+        log.debug("Validating runfolder...")
 
         # FIXME: Dont raise here. 
         if not CreateDirHandler._validate_runfolder_exists(runfolder, monitored_dir):
@@ -502,6 +509,8 @@ class CreateDirHandler(BaseDsmcHandler):
             return
 
         # We want to verify that the Unaligned folder is setup correctly when running on biotanks.
+        log.debug("Validating Unaligned...")
+
         my_host = self.request.headers.get('Host')            
         # FIXME: Don't raise here
         # FIXME: Make testcase for biotank stuff. 
@@ -514,6 +523,8 @@ class CreateDirHandler(BaseDsmcHandler):
             return      
 
         # FIXME: Don't raise here
+        log.debug("Validating destination for archive...")
+
         if not CreateDirHandler._verify_dest(path_to_archive, remove): 
             response_data = {"service_version": version, "state": State.ERROR}
             reason = "Error when checking the destination path {} (remove={}).".format(path_to_archive, remove)
@@ -524,6 +535,7 @@ class CreateDirHandler(BaseDsmcHandler):
               
         # Raise exception? Print out error to user client. 
         try: 
+            log.debug("Creating a new archive...")
             os.mkdir(path_to_archive)
             CreateDirHandler._create_archive(path_to_runfolder, path_to_archive, exclude_dirs, exclude_extensions)
         except ArteriaUsageException, msg: 
