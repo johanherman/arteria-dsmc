@@ -579,12 +579,6 @@ class CompressArchiveHandler(BaseDsmcHandler):
             # Skip if we match the filename, or the root dir in the archive            
             for exclude in exclude_from_tarball: 
                 if exclude == name or exclude == first_dir:
-                    log.debug("tar.infoname: {}".format(tarinfo.name))
-                    log.debug("name: {}".format(name))
-                    log.debug("first dir: {}".format(first_dir))
-                    log.debug(name in exclude_from_tarball)
-                    log.debug(first_dir in exclude_from_tarball)
-                    log.debug(exclude_from_tarball)
                     return None
 
             return tarinfo
