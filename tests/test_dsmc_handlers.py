@@ -117,7 +117,7 @@ class TestDsmcHandlers(AsyncHTTPTestCase):
         self.assertTrue(os.path.exists(os.path.join(archive_path, "directory2", "file.bin")))
 
         # Should fail due to folder already existing
-        body = {"remove": "False", "exclude_dirs": "['foo', 'bar']", "exclude_extensions": "['.txt', '.bar']"}
+        body = {"remove": "False"} 
         response = self.fetch(self.API_BASE + "/create_dir/testrunfolder", method="POST", body=json_encode(body))
         json_resp = json.loads(response.body)
 
@@ -136,7 +136,7 @@ class TestDsmcHandlers(AsyncHTTPTestCase):
         self.assertFalse(os.path.exists(os.path.join(archive_path, "remove-me")))
 
         import shutil
-        shutil.rmtree(archive_path)
+       # shutil.rmtree(archive_path)
         
     @mock.patch("dsmc.lib.jobrunner.LocalQAdapter.start", autospec=True)
     def test_generate_checksum(self, mock_start):
@@ -300,3 +300,42 @@ cat tests/resources/dsmc_output/dsmc_pdc_filelist.txt
         uploaded = sets.Set(uploaded)
         exp_upload = sets.Set(exp_upload)
         self.assertEqual(len(uploaded.symmetric_difference(exp_upload)), 0)
+
+    def test_compress_archive_full(self): 
+        import shutil
+        root = self.dummy_config["path_to_archive_root"]
+        archive_path = os.path.join(root, "johanhe_test_archive")
+
+        shutil.copytree(os.path.join(root, "johanhe_test_runfolder"), archive_path)
+
+        resp = self.fetch(self.API_BASE + "/compress_archive/johanhe_test_archive", method="POST", 
+                          allow_nonstandard_methods=True)
+                
+        json_resp = json.loads(resp.body)
+        self.assertEqual(json_resp["state"], State.DONE)
+        
+        self.assertFalse(os.path.exists(os.path.join(archive_path, "RunInfo.xml")))
+        self.assertTrue(os.path.exists(os.path.join(archive_path, "Config")))
+        self.assertTrue(os.path.exists(os.path.join(archive_path, "johanhe_test_archive.tar.gz")))
+
+        shutil.rmtree(archive_path)
+
+    def test_compress_archive_mini(self): 
+        import shutil
+        root = self.dummy_config["path_to_archive_root"]
+        archive_path = os.path.join(root, "testrunfolder_archive_tmp")
+
+        shutil.copytree(os.path.join(root, "testrunfolder_archive"), archive_path)
+
+        resp = self.fetch(self.API_BASE + "/compress_archive/testrunfolder_archive_tmp", method="POST", 
+                          allow_nonstandard_methods=True)
+                
+        json_resp = json.loads(resp.body)
+        self.assertEqual(json_resp["state"], State.DONE)
+        
+        self.assertTrue(os.path.exists(os.path.join(archive_path, "file.csv")))
+        self.assertFalse(os.path.exists(os.path.join(archive_path, "file.bin")))
+        self.assertTrue(os.path.exists(os.path.join(archive_path, "directory2")))
+        self.assertTrue(os.path.exists(os.path.join(archive_path, "testrunfolder_archive_tmp.tar.gz")))    
+
+        shutil.rmtree(archive_path)    

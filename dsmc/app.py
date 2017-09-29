@@ -3,7 +3,7 @@ from tornado.web import URLSpec as url
 
 from arteria.web.app import AppService
 
-from dsmc.handlers.dsmc_handlers import VersionHandler, UploadHandler, StatusHandler, ReuploadHandler, CreateDirHandler, GenChecksumsHandler#, StopHandler
+from dsmc.handlers.dsmc_handlers import VersionHandler, UploadHandler, StatusHandler, ReuploadHandler, CreateDirHandler, GenChecksumsHandler, CompressArchiveHandler#, StopHandler
 from dsmc.lib.jobrunner import LocalQAdapter
 
 # FIXME: 1. Write test cases!!!
@@ -31,7 +31,8 @@ def routes(**kwargs):
         url(r"/api/1.0/status/(\d*)", StatusHandler, name="status", kwargs=kwargs),
         url(r"/api/1.0/reupload/([\w_-]+)", ReuploadHandler, name="reupload", kwargs=kwargs),
         url(r"/api/1.0/create_dir/([\w_-]+)", CreateDirHandler, name="createdir", kwargs=kwargs),
-        url(r"/api/1.0/gen_checksums/([\w_-]+)", GenChecksumsHandler, name="genchecksums", kwargs=kwargs)
+        url(r"/api/1.0/gen_checksums/([\w_-]+)", GenChecksumsHandler, name="genchecksums", kwargs=kwargs),
+        url(r"/api/1.0/compress_archive/([\w_-]+)", CompressArchiveHandler, name="compressarchive", kwargs=kwargs)
         #url(r"/api/1.0/stop/([\d|all]*)", StopHandler, name="stop", kwargs=kwargs),
     ]
 

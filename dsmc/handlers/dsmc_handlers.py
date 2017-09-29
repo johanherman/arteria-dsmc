@@ -6,7 +6,9 @@ import uuid
 import subprocess
 import shutil
 import re 
-import pdb;
+import pdb
+import tarfile
+import errno
 
 from arteria.exceptions import ArteriaUsageException
 from arteria.web.state import State
@@ -550,6 +552,69 @@ class CreateDirHandler(BaseDsmcHandler):
 
         self.set_status(200, reason="Finished processing.")
         self.write_object(response_data)
+
+class CompressArchiveHandler(BaseDsmcHandler): 
+    def post(self, archive): 
+        # TODO: Validate archive exists etc
+        path_to_archive_root = self.config["path_to_archive_root"]
+        path_to_archive = os.path.abspath(os.path.join(path_to_archive_root, archive))
+        tarball_path = "{}.tar.gz".format(os.path.join(path_to_archive, archive))
+
+        exclude_from_tarball = self.config["exclude_from_tarball"]
+
+        log.debug("Checking to see if {} exists".format(tarball_path))
+
+        if os.path.exists(tarball_path):
+            response_data = {"service_version": version, "state": State.ERROR}
+            reason = "Tarball {} already exists. Manual intervention required. Aborting.".format(tarball_path)
+            log.debug(reason)
+            self.set_status(500, reason=reason)
+            self.write_object(response_data)                  
+            return 
+
+        def exclude_content(tarinfo):
+            name = os.path.basename(tarinfo.name)
+            first_dir = tarinfo.name.split("/")[1]
+
+            # Skip if we match the filename, or the root dir in the archive            
+            for exclude in exclude_from_tarball: 
+                if exclude == name or exclude == first_dir:
+                    log.debug("tar.infoname: {}".format(tarinfo.name))
+                    log.debug("name: {}".format(name))
+                    log.debug("first dir: {}".format(first_dir))
+                    log.debug(name in exclude_from_tarball)
+                    log.debug(first_dir in exclude_from_tarball)
+                    log.debug(exclude_from_tarball)
+                    return None
+
+            return tarinfo
+      
+        with tarfile.open(name=tarball_path, mode="w:gz", dereference=True) as tar: 
+            tar.add(path_to_archive, arcname="./", recursive=True, filter=exclude_content)
+        
+        # Remove files that we added to the tarball. 
+        with tarfile.open(tarball_path) as tar: 
+            for member in tar.getmembers(): 
+                try: 
+                    filepath = os.path.normpath(os.path.join(path_to_archive_root, archive, member.name))
+                    if os.path.isfile(filepath): 
+                        os.remove(filepath)
+                    # FIXME: For now we ignore that we will end up with empty directories afterwards, 
+                    # as it introduces extra complexities. 
+                    #elif member.name != "." and os.path.isdir(filepath):
+                    #    os.removedirs(filepath) 
+
+                except OSError, e: 
+                    response_data = {"service_version": version, "state": State.ERROR}
+                    reason = "Could not remove file {}: {} Aborting".format(filepath, e)
+                    log.debug(reason)
+                    self.set_status(500, reason=reason)
+                    self.write_object(response_data)
+                    return 
+
+        response_data = {"service_version": version, "state": State.DONE}
+        self.set_status(200, reason="Finished creating the tarball")
+        self.write_object(response_data) 
 
 
 class StatusHandler(BaseDsmcHandler):
