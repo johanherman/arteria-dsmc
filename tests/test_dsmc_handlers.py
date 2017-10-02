@@ -17,7 +17,7 @@ from arteria.exceptions import ArteriaUsageException
 
 from dsmc.app import routes
 from dsmc import __version__ as dsmc_version
-from dsmc.handlers.dsmc_handlers import VersionHandler, UploadHandler, StatusHandler, ReuploadHandler, CreateDirHandler, GenChecksumsHandler, ReuploadHelper
+from dsmc.handlers.dsmc_handlers import VersionHandler, UploadHandler, StatusHandler, ReuploadHandler, CreateDirHandler, GenChecksumsHandler, ReuploadHelper, BaseDsmcHandler
 from dsmc.lib.jobrunner import LocalQAdapter
 from tests.test_utils import DummyConfig
 
@@ -84,7 +84,7 @@ class TestDsmcHandlers(AsyncHTTPTestCase):
         self.assertEqual(json_resp["state"], State.STARTED)
 
 
-    @mock.patch("dsmc.handlers.dsmc_handlers.UploadHandler._is_valid_log_dir", autospec=True)
+    @mock.patch("dsmc.handlers.dsmc_handlers.BaseDsmcHandler._is_valid_log_dir", autospec=True)
     def test_raise_exception_on_log_dir_problem(self, mock__is_valid_log_dir):
         mock__is_valid_log_dir.return_value = False
         response = self.fetch(self.API_BASE + "/upload/test_archive", method="POST", allow_nonstandard_methods=True)

@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 class BaseDsmcHandler(BaseRestHandler):
     """
-    Base handler for checksum.
+    Base handler for dsmc upload operations.
     """
 
     def initialize(self, config, runner_service):
@@ -31,32 +31,60 @@ class BaseDsmcHandler(BaseRestHandler):
 
         :param: config configuration used by the service
         :param: runner_service to use. Must fulfill `dsmc.lib.jobrunner.JobRunnerAdapter` interface
-
         """
         self.config = config
         self.runner_service = runner_service
 
+    @staticmethod
+    def _validate_runfolder_exists(runfolder, monitored_dir):
+        """
+        Validate that the runfolder exists under monitored directories
+        :param runfolder: The runfolder to check for
+        :param monitored_dir: The root in which the runfolder should exist
+        :return: True if this is a valid runfolder
+        """
+        if os.path.isdir(monitored_dir):
+            sub_folders = [ name for name in os.listdir(monitored_dir)
+                            if os.path.isdir(os.path.join(monitored_dir, name)) ]
+            return runfolder in sub_folders
+        else:
+            return False
+
+    @staticmethod
+    def _is_valid_log_dir(log_dir):
+        """
+        Check if the log dir is valid. Right now only checks it is a directory.
+        :param: log_dir to check
+        :return: True is valid dir, else False
+        """
+        return os.path.isdir(log_dir)
 
 class VersionHandler(BaseDsmcHandler):
-
     """
     Get the version of the service
     """
+
     def get(self):
         """
-        Returns the version of the dsmc-service
+        Returns the version of the dsmc service
         """
         self.write_object({"version": version })
 
 
 class ReuploadHelper(object):
-    """
-    Does the same as 
-            #dsmc q ar /proj/ngi2016001/incoming/${RUNFOLDER} | grep "/proj/ngi2016001/incoming" | awk '{print $3" "$NF}'
+    """ 
+    Helper class for the ReuploadHandler. Methods put her mainly to faciliate easier testing. 
     """
     # TODO: What to return if nothing is found? 
-    # TODO: Check that process completed successfully    
-    def get_pdc_descr(self, path_to_archive):     
+    # TODO: Check that process completed successfully
+    def get_pdc_descr(self, path_to_archive):
+        """
+        Fetches the archive `description` label from PDC. 
+
+        :param path_to_archive: The path to the archive uploaded that we want to get the description for
+        :return: A dsmc description if successful, otherwise a FOO
+        """
+        log.info("Fetching description for latest upload of {} to PDC...".format(path_to_archive))
         cmd = "dsmc q ar {}".format(path_to_archive)
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
@@ -80,11 +108,15 @@ class ReuploadHelper(object):
 
         return latest_descr
 
-    """
-    Does the same as 
-         
-    """
     def get_pdc_filelist(self, path_to_archive, descr): 
+        """
+        Gets the files and their sizes from PDC for a certain path (archive), with a specific description. 
+
+        :param path_to_archive: The path to the archive 
+        :param descr: The description label for the uploaded archive
+        :return The dict `uploaded_files` containing a mapping between uploaded file and size in bytes
+        """
+        log.info("Fetching remote filelist for {} from PDC...".format(path_to_archive))
         cmd = "dsmc q ar {} -subdir=yes -description={}".format(path_to_archive, descr)
 
         # TODO: Check that process completed successfully
@@ -96,20 +128,20 @@ class ReuploadHelper(object):
         #if process.returncode:
             #raise RuntimeError('something bad happened')        
 
-        # Take out the bytes and the filename from the output
-        # convert raw output to bytes - first field in matched_lines
-        #
-        # Get the lines containing the path. Then take out the field nr 1 and 5
+        # Take out the bytes and the filename from the output. Then convert the raw filesize 
+        # (first field in matched_lines) output to bytes. 
+        
+        # We're only interested in the lines from the dsmc output that contains the 
+        # path to the archive.
         matched_lines = [line.strip() for line in dsmc_out if path_to_archive in line]
-        log.debug("RAW matched lines: {}".format(matched_lines))
+        log.debug("Uploaded files to PDC: {}".format(matched_lines))
 
-        # NB uploaded list contains folders as well, but when we check local content
-        # we only look at the files, and ignore the folders.
-        uploaded_files = {} #[line for line in matched_lines]
+        uploaded_files = {} 
 
-        # Line looks like
+        # We need to convert the sizes to a common format for easier comparison with local size. 
+        # An output line can look like 
         #4,096  B  2017-07-27 17.48.34    /data/mm-xart002/runfolders/johanhe_test_150821_M00485_0220_000000000-AG2UJ_archive/Config Never e374bd6b-ab36-4f41-94d3-f4eaea9f30d4
-        # but sometimes it can be "4 096", depending on the OS locale. 
+        # but varies, depending on the environment's locale. 
         for line in matched_lines: 
             elements = line.split()
             
@@ -131,7 +163,15 @@ class ReuploadHelper(object):
 
         return uploaded_files
 
+    # TODO: In try block? 
     def get_local_filelist(self, path_to_archive): 
+        """
+        Gets the list of all files and their sizes in the local archive. 
+
+        :param path_to_archive: The path to the local archive
+        :return: The dict `local_files` that maps between local file and size in bytes
+        """
+        log.info("Generating local filelist for {}...".format(path_to_archive))
         local_files = {}
         for root, directories, filenames in os.walk(path_to_archive):
             for filename in filenames:
@@ -144,9 +184,14 @@ class ReuploadHelper(object):
         return local_files
 
     def get_files_to_reupload(self, local_files, uploaded_files):
-        # Sort both - then compare them. We do not need to sort them if we are using dicts!
-        # We consider local files to be the truth - obviously. So if there are more data uploaded 
-        # than present locally we ignore it. 
+        """
+        Compare the list of local and uploaded files. If the size in byte differs, 
+        or if the file exists locally, but not remotely, then it should be re-uploaded. 
+
+        :param local_files: Dict local files -> size in bytes
+        :param uploaded_files: Dict of remote files -> size in bytes
+        :return: List `reupload_files` with the path to all files that needs reuploading
+        """
         reupload_files = []
         for k, v in local_files.iteritems(): 
             if k in uploaded_files: 
@@ -165,6 +210,17 @@ class ReuploadHelper(object):
 
     # TODO: Return something sensible. Error checking. 
     def reupload(self, reupload_files, descr, uniq_id, run_dir, dsmc_log_file, runner_service):
+        """
+        Tells `dsmc` to upload all files in the given filelist.
+
+        :param reupload_files: List of files to reupload
+        :param descr: The unique description of the already uploaded archive with missing files
+        :param uniq_id: A uniq ID for this sessions DSMC interactions
+        :param run_dir: The current dir when `dsmc` starts running
+        :param dsmc_log_file: Path to the file where stdout and stderr from `dsmc` will be sent
+        :param runner_service: The runner service to use 
+        :return: The LocalQ job id associated with this job
+        """
         log.info("Will now reupload the following files: {}".format(reupload_files))
 
         dsmc_reupload = os.path.join("/tmp", "arteria-dsmc-reupload-{}".format(uniq_id))
@@ -175,25 +231,30 @@ class ReuploadHelper(object):
 
         log.debug("Written files to reupload to {}".format(dsmc_reupload))
 
-        #dsmc archive -descr=${DESCR} -filelist=${FILELIST} 2>&1 | tee `pwd`/${FILELIST}.tsm_log
         cmd = "dsmc archive -filelist={} -description={}".format(dsmc_reupload, descr)
         log.debug("Running command {}".format(cmd))
         job_id = runner_service.start(cmd, nbr_of_cores=1, run_dir=run_dir, stdout=dsmc_log_file, stderr=dsmc_log_file)
 
         return job_id
 
+# FIXME: Helper function for returning an error message. 
 class ReuploadHandler(BaseDsmcHandler):
-    # TODO: Refactor out
-    @staticmethod
-    def _validate_runfolder_exists(runfolder, monitored_dir):
-        if os.path.isdir(monitored_dir):
-            sub_folders = [ name for name in os.listdir(monitored_dir)
-                            if os.path.isdir(os.path.join(monitored_dir, name)) ]
-            return runfolder in sub_folders
-        else:
-            return False
+    """
+    Handler for (re-)uploading missing files for a certain archive already uploaded to PDC. 
+    Useful when e.g. a previous upload was interrupted, or if new files should be added. 
+    """
 
     def post(self, runfolder_archive): 
+        """
+        Compares local copy of the runfolder archive with the latest uploaded version.
+        If any files are missing on the remote (PDC) side then they will be uploaded.
+        Job is run in the background to be polled by the status endpoint.         
+
+        :param runfolder_archive: the archive we want to re-upload
+        :return: HTTP 200 if nothing to reupload, HTTP 202 if reupload started successfully, with a `job_id` to be used for later polling,
+                 HTTP 500 if unexpected error detected. 
+            
+        """
         monitored_dir = self.config["path_to_archive_root"]
         helper = ReuploadHelper()
 
@@ -207,7 +268,7 @@ class ReuploadHandler(BaseDsmcHandler):
         uniq_id = str(uuid.uuid4())        
         dsmc_log_dir = self.config["dsmc_log_directory"]
 
-        if not UploadHandler._is_valid_log_dir(dsmc_log_dir):
+        if not BaseDsmcHandler._is_valid_log_dir(dsmc_log_dir):
             response_data = {"service_version": version, "state": State.ERROR}
             self.set_status(500, reason="{} is not a directory!".format(dsmc_log_dir))
             self.write_object(response_data)
@@ -219,9 +280,8 @@ class ReuploadHandler(BaseDsmcHandler):
                                                       uniq_id,
                                                       datetime.datetime.now().isoformat())            
 
-        #pdb.set_trace() 
-
         # Step 1 - fetch the description of the last uploaded version of this archive
+        # TODO: What to do if not found? 
         descr = helper.get_pdc_descr(path_to_archive)
 
         # Step 2 - check the difference of the uploaded version vs the local archive
@@ -229,15 +289,18 @@ class ReuploadHandler(BaseDsmcHandler):
         uploaded_files = helper.get_pdc_filelist(path_to_archive, descr)
 
         # 2b, Then, get the expected filelist from us
+        # TODO: What to do if no files are found? 
         local_files = helper.get_local_filelist(path_to_archive)
-
+        # NB uploaded list contains folders as well, but when we check local content
+        # we only look at the files, and ignore the folders.
         # 2c, Check if we have to reupload anything
+        # TODO: Is this enough? 
         reupload_files = helper.get_files_to_reupload(local_files, uploaded_files)
 
         # Step 3 - upload the missing files with the previous description
         if reupload_files: 
             job_id = helper.reupload(reupload_files, descr, uniq_id, monitored_dir, dsmc_log_file, self.runner_service)
-            log.debug("job_id {}".format(job_id))
+            log.debug("Reupload job_id {}".format(job_id))
         
             status_end_point = "{0}://{1}{2}".format(
             self.request.protocol,
@@ -266,56 +329,32 @@ class ReuploadHandler(BaseDsmcHandler):
         self.write_object(response_data)     
 
 class UploadHandler(BaseDsmcHandler):
-
     """
-    Validate that the runfolder exists under monitored directories
-    :param runfolder: The runfolder to check for
-    :param monitored_dir: The root in which the runfolder should exist
-    :return: True if this is a valid runfolder
-    """
-    @staticmethod
-    def _validate_runfolder_exists(runfolder, monitored_dir):
-        if os.path.isdir(monitored_dir):
-            sub_folders = [ name for name in os.listdir(monitored_dir)
-                            if os.path.isdir(os.path.join(monitored_dir, name)) ]
-            return runfolder in sub_folders
-        else:
-            return False
-
-    @staticmethod
-    def _is_valid_log_dir(log_dir):
-        """
-        Check if the log dir is valid. Right now only checks it is a directory.
-        :param: log_dir to check
-        :return: True is valid dir, else False
-        """
-        return os.path.isdir(log_dir)
-
-
-    """
-    Start a dsmc process.
-
-    The request needs to pass the path the md5 sum file to check in "path_to_md5_sum_file". This path
-    has to point to a file in the runfolder.
-
-    :param runfolder: name of the runfolder we want to start archiving
-
+    Handler for uploading an archive to PDC. 
     """
     def post(self, runfolder_archive):
+        """
+        Tells `dsmc` to upload `runfolder_archive` to PDC, with a uniquely generated description label. 
+        Job is run in the background to be polled by the status endpoint. 
+
+        :param runfolder_archive: the name of the archive that we want to upload
+        :return: HTTP 202 if the upload as started successfully, with a `job_id` to be used for later status polling, 
+                 HTTP 500 if an unexpected error was encountered
+        """
 
         monitored_dir = self.config["path_to_archive_root"]
 
-        if not UploadHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
+        if not BaseDsmcHandler._validate_runfolder_exists(runfolder_archive, monitored_dir):
             response_data = {"service_version": version, "state": State.ERROR}
             self.set_status(500, reason="{} is not found under {}!".format(runfolder_archive, path_to_archive_root))
             self.write_object(response_data)
             return
 
-        path_to_runfolder = os.path.join(monitored_dir, runfolder_archive)
+        path_to_archive = os.path.join(monitored_dir, runfolder_archive)
         dsmc_log_dir = self.config["dsmc_log_directory"]
         uniq_id = str(uuid.uuid4())
 
-        if not UploadHandler._is_valid_log_dir(dsmc_log_dir):
+        if not BaseDsmcHandler._is_valid_log_dir(dsmc_log_dir):
             raise ArteriaUsageException("{} is not a directory!".format(dsmc_log_dir))
 
         # TODO: Need to put the logs in the commands as well. 
@@ -329,10 +368,8 @@ class UploadHandler(BaseDsmcHandler):
        #                                                                          runfolder,
        #                                                                          description)
         
-        cmd = "dsmc archive {}/ -subdir=yes -description={}".format(path_to_runfolder, uniq_id)
-        # FIXME: echo is just used when testing return codes locally. 
-        #cmd = "echo 'ANS1809W ANS2000W Test run started.' && echo ANS9999W && echo ANS1809W && exit 8" #false
-        #cmd = "echo 'ANS1809W Test run started.' && echo ANS1809W && exit 8"
+        log.info("Uploading {} to PDC...".format(path_to_archive))
+        cmd = "dsmc archive {}/ -subdir=yes -description={}".format(path_to_archive, uniq_id)
         job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=monitored_dir, stdout=dsmc_log_file, stderr=dsmc_log_file)
 
         status_end_point = "{0}://{1}{2}".format(
@@ -351,14 +388,25 @@ class UploadHandler(BaseDsmcHandler):
         self.write_object(response_data)
 
 
+# TODO: Add helper functions - refactor with other base class 
 class GenChecksumsHandler(BaseDsmcHandler): 
-    # TODO: Add helper functions - refactor with other base class 
+    """
+    Handler for generating checksums for an archive before uploading to PDC. 
+    """
 
     def post(self, runfolder_archive):
+        """
+        Calculates the MD5 checksums for each file in the runfolder archive, before uploading to PDC. 
+        Job is run in the background to be polled by the status endpoint. 
+    
+        :param runfolder_archive: Name of the runfolder archive 
+        :returns: HTTP 202 if checksum job has started successfully, with a `job_id` to be used in later polling, 
+                  HTTP 500 if an unexpected error was encountered
+        """
         path_to_archive_root = os.path.abspath(self.config["path_to_archive_root"])
         checksum_log = os.path.abspath(os.path.join(self.config["dsmc_log_directory"], "checksum.log"))
         
-        if not UploadHandler._validate_runfolder_exists(runfolder_archive, path_to_archive_root):
+        if not BaseDsmcHandler._validate_runfolder_exists(runfolder_archive, path_to_archive_root):
             response_data = {"service_version": version, "state": State.ERROR}
             self.set_status(500, reason="{} is not found under {}!".format(runfolder_archive, path_to_archive_root))
             self.write_object(response_data)
@@ -367,7 +415,9 @@ class GenChecksumsHandler(BaseDsmcHandler):
         path_to_archive = os.path.join(path_to_archive_root, runfolder_archive)
         filename = "checksums_prior_to_pdc.md5"
         
+        # FIXME: The checksum file includes itself. Fix the removal!
         cmd = "cd {} && /usr/bin/find -L . -type f ! -path '{}' -exec /usr/bin/md5sum {{}} + > {}".format(path_to_archive, filename, filename)
+        log.info("Generating checksums for {}".format(path_to_archive))
         log.debug("Will now execute command {}".format(cmd))
         job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=path_to_archive_root, stdout=checksum_log, stderr=checksum_log) 
 
@@ -386,38 +436,25 @@ class GenChecksumsHandler(BaseDsmcHandler):
         self.write_object(response_data)
 
 class CreateDirHandler(BaseDsmcHandler):
-    # TODO: Refactor
     """
-    Validate that the runfolder exists under monitored directories
-    :param runfolder: The runfolder to check for
-    :param monitored_dir: The root in which the runfolder should exist
-    :return: True if this is a valid runfolder
+    Handler for creating an archive to upload. 
     """
-    @staticmethod
-    def _validate_runfolder_exists(runfolder, monitored_dir):
-        if os.path.isdir(monitored_dir):
-            sub_folders = [ name for name in os.listdir(monitored_dir)
-                            if os.path.isdir(os.path.join(monitored_dir, name)) ]
-            return runfolder in sub_folders
-        else: 
-            return False
-
-    @staticmethod
-    def _is_valid_log_dir(log_dir):
-        """
-        Check if the log dir is valid. Right now only checks it is a directory.
-        :param: log_dir to check
-        :return: True is valid dir, else False
-        """
-        return os.path.isdir(log_dir)
-
 
     @staticmethod
     def _verify_unaligned(srcdir):
-        # On biotanks we need to verify the Unaligned link. 
+        """
+        Check that the archive contains the `Unaligned` symlink when running on biotanks. 
+        The link should point to a proper directory. 
+
+        :param srcdir: The path to the archive which we should investigate
+        :return: True if `srcdir` contains a symlink `Unaligned` that points to a directory, 
+                 False otherwise 
+        """
+        # TODO: Need a testcase for this 
         unaligned_link = os.path.join(srcdir, "Unaligned")
         unaligned_dir = os.path.abspath(unaligned_link)
 
+        # TODO: Rewrite logic according to docstring. 
         if not os.path.exists(unaligned_link) or not os.path.islink(unaligned_link): 
             log.info("Expected link {} doesn't seem to exist or is broken. Aborting.".format(unaligned_link))
             return False
@@ -428,9 +465,18 @@ class CreateDirHandler(BaseDsmcHandler):
         return True
     
     @staticmethod
-    def _verify_dest(destdir, remove=False): 
+    def _verify_dest(destdir, remove=False):
+        """
+        Check if the proposed new archive already exists, and if the operator wants to remove it then do so. 
+
+        :param destdir: Path to the archive to create
+        :param remove: Boolean that specifies whether or not we should remove `destdir` if it already exists
+        :return: True if the archive doesn't exist, or if it was removed successfully, 
+                 False otherwise
+        """
         log.debug("Checking to see if {} exists".format(destdir))
 
+        # TODO: Try for rmtree
         if os.path.exists(destdir):
             if remove: 
                 log.debug("Archive directory {} already exists. Operator requested to remove it.".format(destdir))
@@ -442,11 +488,19 @@ class CreateDirHandler(BaseDsmcHandler):
         else: 
             return True
 
-    """ 
-    Symlink _archive dir to runfolder, and filter out some stuff. 
-    """
     @staticmethod
     def _create_archive(oldtree, newtree, exclude_dirs=[], exclude_extensions=[]): 
+        """ 
+        Create a new runfolder archive named `<runfolder>_archive` by iterating through 
+        the runfolder and symlinking each file. If the service has been configured to 
+        exclude certain directories or file extensions then those directories and symlinks
+        will be ignored. 
+        
+        :param oldtree: Path to the runfolder
+        :param newtree: Path to the archive which we are going to create
+        :param exclude_dir: List of directory names to exclude from the archive
+        :param exclude_extensions: List of file extensions to exclude from the archive 
+        """        
         try: 
             content = os.listdir(oldtree)
 
@@ -471,16 +525,15 @@ class CreateDirHandler(BaseDsmcHandler):
             log.debug(errmsg)
             raise ArteriaUsageException(errmsg)       
 
-    """
-    Create a directory to be used for archiving.
-
-    :param runfolder: name of the runfolder we want to create an archive dir of
-    :param exclude: list of patterns to use when excluding files and/or dirs 
-    :param remove: boolean to indicate if we should remove previous archive 
-
-    """
     def post(self, runfolder):
+        """
+        Create a directory to be used for archiving.
 
+        :param runfolder: name of the runfolder we want to create an archive dir of 
+        :param remove: boolean to indicate if we should remove previous archive 
+        :return: HTTP 200 if runfolder archive was created successfully, 
+                 HTTP 500 otherwise
+        """
         log.debug("Fetching configuration...")
 
         monitored_dir = self.config["monitored_directory"]
@@ -500,8 +553,7 @@ class CreateDirHandler(BaseDsmcHandler):
 
         log.debug("Validating runfolder...")
 
-        # FIXME: Dont raise here. 
-        if not CreateDirHandler._validate_runfolder_exists(runfolder, monitored_dir):
+        if not BaseDsmcHandler._validate_runfolder_exists(runfolder, monitored_dir):
             # TODO: Write a wrapper that can print out this. 
             response_data = {"service_version": version, "state": State.ERROR}
             reason = "{} is not found under {}!".format(runfolder_archive, monitored_dir)
@@ -514,7 +566,6 @@ class CreateDirHandler(BaseDsmcHandler):
         log.debug("Validating Unaligned...")
 
         my_host = self.request.headers.get('Host')            
-        # FIXME: Don't raise here
         # FIXME: Make testcase for biotank stuff. 
         if "biotank" in my_host and not CreateDirHandler._verify_unaligned(path_to_runfolder): 
             response_data = {"service_version": version, "state": State.ERROR}
@@ -524,7 +575,6 @@ class CreateDirHandler(BaseDsmcHandler):
             self.write_object(response_data)      
             return      
 
-        # FIXME: Don't raise here
         log.debug("Validating destination for archive...")
 
         if not CreateDirHandler._verify_dest(path_to_archive, remove): 
@@ -537,7 +587,7 @@ class CreateDirHandler(BaseDsmcHandler):
               
         # Raise exception? Print out error to user client. 
         try: 
-            log.debug("Creating a new archive...")
+            log.info("Creating a new archive {}...".format(path_to_archive))
             os.mkdir(path_to_archive)
             CreateDirHandler._create_archive(path_to_runfolder, path_to_archive, exclude_dirs, exclude_extensions)
         except ArteriaUsageException, msg: 
@@ -554,7 +604,20 @@ class CreateDirHandler(BaseDsmcHandler):
         self.write_object(response_data)
 
 class CompressArchiveHandler(BaseDsmcHandler): 
+    """
+    Handler for compressing certain files in the archive before uploading. 
+    """
+
     def post(self, archive): 
+        """
+        Create a gziped tarball of most files in the archive, with the exception of 
+        certain excluded files and directories that are to be kept as-is in the archive.
+
+        :param archive: The name of the archive which we should pack together
+        :return: HTTP 200 if the tarball was created successfully, 
+                 HTTP 500 otherwise 
+
+        """
         # TODO: Validate archive exists etc
         path_to_archive_root = self.config["path_to_archive_root"]
         path_to_archive = os.path.abspath(os.path.join(path_to_archive_root, archive))
@@ -573,19 +636,33 @@ class CompressArchiveHandler(BaseDsmcHandler):
             return 
 
         def exclude_content(tarinfo):
+            """
+            Filter function when creating the tarball
+            """
             name = os.path.basename(tarinfo.name)
+            # The name field contains the path to the file relative to the 
+            # root dir of the archive, i.e. the path starts with "./".
+            # Therefore the second element in the list split on "/"
+            # will be the first subdir (if any) inside the archive.
             first_dir = tarinfo.name.split("/")[1]
 
-            # Skip if we match the filename, or the root dir in the archive            
+            # Don't include the file if it matches our list of 
+            # files to exclude, or if the first dir in its path
+            # matches one of the dir names in our exception list. 
             for exclude in exclude_from_tarball: 
                 if exclude == name or exclude == first_dir:
                     return None
 
             return tarinfo
       
+        log.info("Creating tarball {}...".format(tarball_path))
+
         with tarfile.open(name=tarball_path, mode="w:gz", dereference=True) as tar: 
             tar.add(path_to_archive, arcname="./", recursive=True, filter=exclude_content)
         
+
+        log.info("Removing files from {} that were added to {}".format(path_to_archive_root, tarball_path))
+
         # Remove files that we added to the tarball. 
         with tarfile.open(tarball_path) as tar: 
             for member in tar.getmembers(): 
