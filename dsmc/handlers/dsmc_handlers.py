@@ -348,7 +348,6 @@ class ReuploadHandler(BaseDsmcHandler):
 
             response_data = {
             "service_version": version,
-            "link": status_end_point,
             "state": State.DONE,
             "dsmc_log_dir": dsmc_log_dir}
 
