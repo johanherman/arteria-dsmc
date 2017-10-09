@@ -270,9 +270,9 @@ class ReuploadHandler(BaseDsmcHandler):
         uniq_id = str(uuid.uuid4())        
         dsmc_log_root_dir = self.config["dsmc_log_directory"]
 
-        if not BaseDsmcHandler._is_valid_log_dir(dsmc_log_dir):
+        if not BaseDsmcHandler._is_valid_log_dir(dsmc_log_root_dir):
             response_data = {"service_version": version, "state": State.ERROR}
-            self.set_status(500, reason="{} is not a directory!".format(dsmc_log_dir))
+            self.set_status(500, reason="{} is not a directory!".format(dsmc_log_root_dir))
             self.write_object(response_data)
             return                 
 
@@ -359,8 +359,8 @@ class UploadHandler(BaseDsmcHandler):
         dsmc_log_root_dir = self.config["dsmc_log_directory"]
         uniq_id = str(uuid.uuid4())
 
-        if not BaseDsmcHandler._is_valid_log_dir(dsmc_log_dir):
-            raise ArteriaUsageException("{} is not a directory!".format(dsmc_log_dir))
+        if not BaseDsmcHandler._is_valid_log_dir(dsmc_log_root_dir):
+            raise ArteriaUsageException("{} is not a directory!".format(dsmc_log_root_dir))
 
         # TODO: Need to put the logs in the commands as well. 
         dsmc_log_dir = "{}/dsmc_{}_{}".format(dsmc_log_root_dir,
