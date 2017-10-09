@@ -120,7 +120,7 @@ class ReuploadHelper(object):
         :return The dict `uploaded_files` containing a mapping between uploaded file and size in bytes
         """
         log.info("Fetching remote filelist for {} from PDC...".format(path_to_archive))
-        cmd = "export DSM_LOG={} && dsmc q ar {} -subdir=yes -description={}".format(dsmc_log_dir, path_to_archive, descr)
+        cmd = "export DSM_LOG={} && dsmc q ar {}/ -subdir=yes -description={}".format(dsmc_log_dir, path_to_archive, descr)
 
         # TODO: Check that process completed successfully
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -213,7 +213,7 @@ class ReuploadHelper(object):
         return reupload_files
 
     # TODO: Return something sensible. Error checking. 
-    def reupload(self, reupload_files, descr, uniq_id, dsmc_log_dir, output_file, runner_service):
+    def reupload(self, reupload_files, descr, dsmc_log_dir, output_file, runner_service):
         """
         Tells `dsmc` to upload all files in the given filelist.
 
@@ -227,6 +227,7 @@ class ReuploadHelper(object):
         """
         log.info("Will now reupload the following files: {}".format(reupload_files))
 
+        uniq_id = str(uuid.uuid4()) 
         dsmc_reupload = os.path.join("/tmp", "arteria-dsmc-reupload-{}".format(uniq_id))
 
         with open(dsmc_reupload, 'wa') as f:
@@ -306,7 +307,7 @@ class ReuploadHandler(BaseDsmcHandler):
 
         # Step 3 - upload the missing files with the previous description
         if reupload_files: 
-            job_id = helper.reupload(reupload_files, descr, uniq_id, dsmc_log_dir, dsmc_output, self.runner_service)
+            job_id = helper.reupload(reupload_files, descr, dsmc_log_dir, dsmc_output, self.runner_service)
             log.debug("Reupload job_id {}".format(job_id))
         
             status_end_point = "{0}://{1}{2}".format(
