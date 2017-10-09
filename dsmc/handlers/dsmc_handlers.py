@@ -197,18 +197,22 @@ class ReuploadHelper(object):
         :return: List `reupload_files` with the path to all files that needs reuploading
         """
         reupload_files = []
-        for k, v in local_files.iteritems(): 
-            if k in uploaded_files: 
-                log.debug("Local file has been uploaded {}".format(k))
+        for name, size in local_files.iteritems(): 
+            if name in uploaded_files: 
+                log.debug("Local file has been uploaded {}".format(name))
 
-                if v != uploaded_files[k]: 
-                    log.info("::: ERROR ::: Local file size {} doesn't match remote file size {} for file {}".format(v, uploaded_files[k], k))
-                    reupload_files.append(k)
+                log.debug("type size {}".format(type(size)))
+                log.debug("type name {}".format(type(name)))
+                log.debug("type uploaded_files[name] {}".format(type(uploaded_files[name])))
+    
+                if size != uploaded_files[name]: 
+                    log.info("Local file size {} doesn't match remote file size {} for file {}".format(size, uploaded_files[name], name))
+                    reupload_files.append(name)
                 else: 
-                    log.debug("Local file size matches uploaded file size")
+                    log.debug("Local file ({}) size matches uploaded file size".format(name))
             else: 
-                log.info("::: ERROR ::: Local file has NOT been uploaded {}".format(k))
-                reupload_files.append(k)
+                log.info("Local file has NOT been uploaded {}".format(name))
+                reupload_files.append(name)
 
         return reupload_files
 
