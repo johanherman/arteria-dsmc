@@ -218,8 +218,8 @@ class ReuploadHelper(object):
         :param reupload_files: List of files to reupload
         :param descr: The unique description of the already uploaded archive with missing files
         :param uniq_id: A uniq ID for this sessions DSMC interactions
-        :param run_dir: The current dir when `dsmc` starts running
-        :param dsmc_log_file: Path to the file where stdout and stderr from `dsmc` will be sent
+        :param FIXME run_dir: The current dir when `dsmc` starts running
+        :param FIXME dsmc_log_file: Path to the file where stdout and stderr from `dsmc` will be sent
         :param runner_service: The runner service to use 
         :return: The LocalQ job id associated with this job
         """
@@ -283,7 +283,7 @@ class ReuploadHandler(BaseDsmcHandler):
         if not os.path.exists(dsmc_log_dir): 
             os.makedirs(dsmc_log_dir)
         
-        dsmc_output = "{}/dsmc_output".format(dsmc_log_file)
+        dsmc_output = "{}/dsmc_output".format(dsmc_log_dir)
 
         # Step 1 - fetch the description of the last uploaded version of this archive
         # TODO: What to do if not found? 
