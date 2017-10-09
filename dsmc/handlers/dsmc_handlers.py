@@ -77,7 +77,7 @@ class ReuploadHelper(object):
     """
     # TODO: What to return if nothing is found? 
     # TODO: Check that process completed successfully
-    def get_pdc_descr(self, path_to_archive):
+    def get_pdc_descr(self, path_to_archive, dsmc_log_dir):
         """
         Fetches the archive `description` label from PDC. 
 
@@ -85,7 +85,7 @@ class ReuploadHelper(object):
         :return: A dsmc description if successful, otherwise a FOO
         """
         log.info("Fetching description for latest upload of {} to PDC...".format(path_to_archive))
-        cmd = "dsmc q ar {}".format(path_to_archive)
+        cmd = "export DSM_LOG={} && dsmc q ar {}".format(dsmc_log_dir, path_to_archive)
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         dsmc_out, dsmc_err = p.communicate()
@@ -110,7 +110,7 @@ class ReuploadHelper(object):
 
         return latest_descr
 
-    def get_pdc_filelist(self, path_to_archive, descr): 
+    def get_pdc_filelist(self, path_to_archive, descr, dsmc_log_dir): 
         """
         Gets the files and their sizes from PDC for a certain path (archive), with a specific description. 
 
@@ -119,7 +119,7 @@ class ReuploadHelper(object):
         :return The dict `uploaded_files` containing a mapping between uploaded file and size in bytes
         """
         log.info("Fetching remote filelist for {} from PDC...".format(path_to_archive))
-        cmd = "dsmc q ar {} -subdir=yes -description={}".format(path_to_archive, descr)
+        cmd = "export DSM_LOG={} && dsmc q ar {} -subdir=yes -description={}".format(dsmc_log_dir, path_to_archive, descr)
 
         # TODO: Check that process completed successfully
         p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -211,7 +211,7 @@ class ReuploadHelper(object):
         return reupload_files
 
     # TODO: Return something sensible. Error checking. 
-    def reupload(self, reupload_files, descr, uniq_id, run_dir, dsmc_log_file, runner_service):
+    def reupload(self, reupload_files, descr, uniq_id, dsmc_log_dir, output_file, runner_service):
         """
         Tells `dsmc` to upload all files in the given filelist.
 
@@ -233,9 +233,9 @@ class ReuploadHelper(object):
 
         log.debug("Written files to reupload to {}".format(dsmc_reupload))
 
-        cmd = "dsmc archive -filelist={} -description={}".format(dsmc_reupload, descr)
+        cmd = "export DSM_LOG={} && dsmc archive -filelist={} -description={}".format(dsmc_log_dir, dsmc_reupload, descr)
         log.debug("Running command {}".format(cmd))
-        job_id = runner_service.start(cmd, nbr_of_cores=1, run_dir=run_dir, stdout=dsmc_log_file, stderr=dsmc_log_file)
+        job_id = runner_service.start(cmd, nbr_of_cores=1, run_dir=dsmc_log_dir, stdout=output_file, stderr=output_file)
 
         return job_id
 
@@ -268,7 +268,7 @@ class ReuploadHandler(BaseDsmcHandler):
 
         path_to_archive = os.path.join(monitored_dir, runfolder_archive)
         uniq_id = str(uuid.uuid4())        
-        dsmc_log_dir = self.config["dsmc_log_directory"]
+        dsmc_log_root_dir = self.config["dsmc_log_directory"]
 
         if not BaseDsmcHandler._is_valid_log_dir(dsmc_log_dir):
             response_data = {"service_version": version, "state": State.ERROR}
@@ -277,18 +277,21 @@ class ReuploadHandler(BaseDsmcHandler):
             return                 
 
         # FIXME: log file not used atm
-        dsmc_log_file = "{}/dsmc_{}_{}-{}".format(dsmc_log_dir,
+        dsmc_log_dir = "{}/dsmc_{}_{}-{}".format(dsmc_log_root_dir,
                                                       runfolder_archive,
-                                                      uniq_id,
-                                                      datetime.datetime.now().isoformat())            
+                                                      uniq_id)
+        if not os.path.exists(dsmc_log_dir): 
+            os.makedirs(dsmc_log_dir)
+        
+        dsmc_output = "{}/dsmc_output".format(dsmc_log_file)
 
         # Step 1 - fetch the description of the last uploaded version of this archive
         # TODO: What to do if not found? 
-        descr = helper.get_pdc_descr(path_to_archive)
+        descr = helper.get_pdc_descr(path_to_archive, dsmc_log_dir)
 
         # Step 2 - check the difference of the uploaded version vs the local archive
         # Step 2a, get filelist from PDC      
-        uploaded_files = helper.get_pdc_filelist(path_to_archive, descr)
+        uploaded_files = helper.get_pdc_filelist(path_to_archive, descr, dsmc_log_dir)
 
         # 2b, Then, get the expected filelist from us
         # TODO: What to do if no files are found? 
@@ -301,7 +304,7 @@ class ReuploadHandler(BaseDsmcHandler):
 
         # Step 3 - upload the missing files with the previous description
         if reupload_files: 
-            job_id = helper.reupload(reupload_files, descr, uniq_id, monitored_dir, dsmc_log_file, self.runner_service)
+            job_id = helper.reupload(reupload_files, descr, uniq_id, dsmc_log_dir, dsmc_output, self.runner_service)
             log.debug("Reupload job_id {}".format(job_id))
         
             status_end_point = "{0}://{1}{2}".format(
@@ -314,7 +317,7 @@ class ReuploadHandler(BaseDsmcHandler):
                 "service_version": version,
                 "link": status_end_point,
                 "state": State.STARTED,
-                "dsmc_log": dsmc_log_file}
+                "dsmc_log_dir": dsmc_log_dir}
 
             self.set_status(202, reason="started reuploading")
         else: 
@@ -324,7 +327,7 @@ class ReuploadHandler(BaseDsmcHandler):
             "service_version": version,
             "link": status_end_point,
             "state": State.DONE,
-            "dsmc_log": dsmc_log_file}
+            "dsmc_log_dir": dsmc_log_dir}
 
             self.set_status(200, reason="nothing to reupload")
         
@@ -353,26 +356,24 @@ class UploadHandler(BaseDsmcHandler):
             return
 
         path_to_archive = os.path.join(monitored_dir, runfolder_archive)
-        dsmc_log_dir = self.config["dsmc_log_directory"]
+        dsmc_log_root_dir = self.config["dsmc_log_directory"]
         uniq_id = str(uuid.uuid4())
 
         if not BaseDsmcHandler._is_valid_log_dir(dsmc_log_dir):
             raise ArteriaUsageException("{} is not a directory!".format(dsmc_log_dir))
 
         # TODO: Need to put the logs in the commands as well. 
-        dsmc_log_file = "{}/dsmc_{}_{}-{}".format(dsmc_log_dir,
+        dsmc_log_dir = "{}/dsmc_{}_{}".format(dsmc_log_root_dir,
                                                       runfolder_archive,
-                                                      uniq_id,
-        #                                              description,
-                                                      datetime.datetime.now().isoformat())
+                                                      uniq_id)
+        if not os.path.exists(dsmc_log_dir): 
+            os.makedirs(dsmc_log_dir)
 
-       # cmd = "export DSM_LOG={} && dsmc archive {} -subdir=yes -desc={}".format(dsmc_log_file,
-       #                                                                          runfolder,
-       #                                                                          description)
-        
+        dsmc_output = "{}/dsmc_output".format(dsmc_log_dir)
+
         log.info("Uploading {} to PDC...".format(path_to_archive))
-        cmd = "dsmc archive {}/ -subdir=yes -description={}".format(path_to_archive, uniq_id)
-        job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=monitored_dir, stdout=dsmc_log_file, stderr=dsmc_log_file)
+        cmd = "export DSM_LOG={} && dsmc archive {}/ -subdir=yes -description={}".format(dsmc_log_dir, path_to_archive, uniq_id)
+        job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=dsmc_log_dir, stdout=dsmc_output, stderr=dsmc_output)
 
         status_end_point = "{0}://{1}{2}".format(
             self.request.protocol,
@@ -384,7 +385,7 @@ class UploadHandler(BaseDsmcHandler):
             "service_version": version,
             "link": status_end_point,
             "state": State.STARTED,
-            "dsmc_log": dsmc_log_file}
+            "dsmc_log_dir": dsmc_log_dir}
 
         self.set_status(202, reason="started processing")
         self.write_object(response_data)
@@ -406,7 +407,8 @@ class GenChecksumsHandler(BaseDsmcHandler):
                   HTTP 500 if an unexpected error was encountered
         """
         path_to_archive_root = os.path.abspath(self.config["path_to_archive_root"])
-        checksum_log = os.path.abspath(os.path.join(self.config["dsmc_log_directory"], "checksum.log"))
+        log_dir = self.config["dsmc_log_directory"]
+        checksum_log = os.path.abspath(os.path.join(log_dir, "checksum.log"))
         
         if not BaseDsmcHandler._validate_runfolder_exists(runfolder_archive, path_to_archive_root):
             response_data = {"service_version": version, "state": State.ERROR}
@@ -421,7 +423,7 @@ class GenChecksumsHandler(BaseDsmcHandler):
         cmd = "cd {} && /usr/bin/find -L . -type f ! -path '{}' -exec /usr/bin/md5sum {{}} + > {}".format(path_to_archive, filename, filename)
         log.info("Generating checksums for {}".format(path_to_archive))
         log.debug("Will now execute command {}".format(cmd))
-        job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=path_to_archive_root, stdout=checksum_log, stderr=checksum_log) 
+        job_id = self.runner_service.start(cmd, nbr_of_cores=1, run_dir=log_dir, stdout=checksum_log, stderr=checksum_log) 
 
         status_end_point = "{0}://{1}{2}".format(
             self.request.protocol,
