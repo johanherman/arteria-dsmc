@@ -145,20 +145,34 @@ class ReuploadHelper(object):
         # We need to convert the sizes to a common format for easier comparison with local size. 
         # An output line can look like 
         #4,096  B  2017-07-27 17.48.34    /data/mm-xart002/runfolders/johanhe_test_150821_M00485_0220_000000000-AG2UJ_archive/Config Never e374bd6b-ab36-4f41-94d3-f4eaea9f30d4
-        # but varies, depending on the environment's locale. 
+        # but varies, depending on the environment's locale. Can e.g. be "4 096",  
         for line in matched_lines: 
-            elements = line.split()
-            
-            if "," in elements[0]: 
-                byte_size = elements[0].replace(",", "")
-                filename = elements[4]
-            elif elements[0] == "0": 
-                byte_size = 0
-                filename = elements[4]
+            elements = line.split(" B ")
+            size = elements[0].strip()
+           
+            # I need to split on "B" first.
+            # I also need to be able to handle spaces in the path
+            if "," in size: 
+                byte_size = size.replace(",", "")
+                #filename = elements[4]
+            elif " " in size: 
+                byte_size = size.replace(" ", "")
             else: 
-                byte_size = "{}{}".format(elements[0], elements[1])
-                filename = elements[5]
-            
+                byte_size = size
+            #elif elements[0] == "0": 
+            #    byte_size = 0
+            #    filename = elements[4]
+            #else: 
+            #    byte_size = "{}{}".format(elements[0], elements[1])
+            #    filename = elements[5]
+
+            # We can't be completely sure what format the timestamp will be returned with. 
+            # And we can not be 100% sure what format the description will have either, at least in the future.
+            # This will have to do for now. 
+            import re
+            substr = re.match("{}(.*) Never ".format(path_to_archive), line) 
+            filename = ("{}{}".format(path_to_archive, substr.group(1))).strip()
+
             # TODO: Check so that the key doesn't exist first?
             # E.g. if uploaded twice with the same descr 
             uploaded_files[filename] = int(byte_size)
