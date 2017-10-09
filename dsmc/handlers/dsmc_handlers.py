@@ -91,6 +91,8 @@ class ReuploadHelper(object):
         dsmc_out, dsmc_err = p.communicate()
         dsmc_out = dsmc_out.splitlines()
 
+        log.debug("Raw output from dsmc: {}".format(dsmc_out))
+
         # if dsmc_err: 
         #if process.returncode:
             #raise RuntimeError('something bad happened')
