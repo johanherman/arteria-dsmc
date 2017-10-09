@@ -161,7 +161,7 @@ class ReuploadHelper(object):
             
             # TODO: Check so that the key doesn't exist first?
             # E.g. if uploaded twice with the same descr 
-            uploaded_files[filename] = byte_size
+            uploaded_files[filename] = int(byte_size)
         
         log.debug("Previously uploaded files for the archive are: {}".format(uploaded_files))
 
@@ -181,7 +181,7 @@ class ReuploadHelper(object):
             for filename in filenames:
                 full_path = os.path.join(root, filename)
                 local_size = os.path.getsize(full_path)
-                local_files[full_path] = str(local_size)
+                local_files[full_path] = int(local_size)
         
         log.debug("Local files for the archive are {}".format(local_files))
 
@@ -198,7 +198,9 @@ class ReuploadHelper(object):
         """
         reupload_files = []
         for name, size in local_files.iteritems(): 
-            if name in uploaded_files: 
+            if name in uploaded_files:
+                assert isinstance(size, int), "Local file size needs to be of type int"
+                assert isinstance(uploaded_files[name], int), "Remote file size needs to be of type int"
                 log.debug("Local file has been uploaded {}".format(name))
 
                 log.debug("type size {}".format(type(size)))
