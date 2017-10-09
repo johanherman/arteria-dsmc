@@ -277,7 +277,7 @@ class ReuploadHandler(BaseDsmcHandler):
             return                 
 
         # FIXME: log file not used atm
-        dsmc_log_dir = "{}/dsmc_{}_{}-{}".format(dsmc_log_root_dir,
+        dsmc_log_dir = "{}/dsmc_{}_{}".format(dsmc_log_root_dir,
                                                       runfolder_archive,
                                                       uniq_id)
         if not os.path.exists(dsmc_log_dir): 
