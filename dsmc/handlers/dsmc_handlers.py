@@ -170,7 +170,7 @@ class ReuploadHelper(object):
             # And we can not be 100% sure what format the description will have either, at least in the future.
             # This will have to do for now. 
             import re
-            substr = re.match("{}(.*) Never ".format(path_to_archive), line) 
+            substr = re.search("{}(.*) Never ".format(path_to_archive), line) 
             filename = ("{}{}".format(path_to_archive, substr.group(1))).strip()
 
             # TODO: Check so that the key doesn't exist first?
