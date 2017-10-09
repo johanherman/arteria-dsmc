@@ -98,6 +98,7 @@ class ReuploadHelper(object):
             #raise RuntimeError('something bad happened')
 
         uploaded_versions = [line.strip() for line in dsmc_out if path_to_archive in line]
+        # FIXME: abort if uploaded_version is empty
         log.debug("Found the following uploaded versions of this archive: {}".format(uploaded_versions))
         
         # Uploads are chronologically sorted, with the latest upload last.
@@ -137,6 +138,7 @@ class ReuploadHelper(object):
         # path to the archive.
         matched_lines = [line.strip() for line in dsmc_out if path_to_archive in line]
         log.debug("Uploaded files to PDC: {}".format(matched_lines))
+        #FIXME: abort if matched_lines is empty
 
         uploaded_files = {} 
 
@@ -267,7 +269,7 @@ class ReuploadHandler(BaseDsmcHandler):
             return     
 
         path_to_archive = os.path.join(monitored_dir, runfolder_archive)
-        uniq_id = str(uuid.uuid4())        
+#        uniq_id = str(uuid.uuid4())        
         dsmc_log_root_dir = self.config["dsmc_log_directory"]
 
         if not BaseDsmcHandler._is_valid_log_dir(dsmc_log_root_dir):
@@ -277,9 +279,9 @@ class ReuploadHandler(BaseDsmcHandler):
             return                 
 
         # FIXME: log file not used atm
-        dsmc_log_dir = "{}/dsmc_{}_{}".format(dsmc_log_root_dir,
-                                                      runfolder_archive,
-                                                      uniq_id)
+        dsmc_log_dir = "{}/dsmc_{}".format(dsmc_log_root_dir,
+                                                      runfolder_archive)#,
+       #                                               uniq_id)
         if not os.path.exists(dsmc_log_dir): 
             os.makedirs(dsmc_log_dir)
         
@@ -363,9 +365,9 @@ class UploadHandler(BaseDsmcHandler):
             raise ArteriaUsageException("{} is not a directory!".format(dsmc_log_root_dir))
 
         # TODO: Need to put the logs in the commands as well. 
-        dsmc_log_dir = "{}/dsmc_{}_{}".format(dsmc_log_root_dir,
-                                                      runfolder_archive,
-                                                      uniq_id)
+        dsmc_log_dir = "{}/dsmc_{}".format(dsmc_log_root_dir,
+                                                      runfolder_archive)#,
+                                                      #uniq_id)
         if not os.path.exists(dsmc_log_dir): 
             os.makedirs(dsmc_log_dir)
 
