@@ -216,11 +216,7 @@ class ReuploadHelper(object):
                 assert isinstance(size, int), "Local file size needs to be of type int"
                 assert isinstance(uploaded_files[name], int), "Remote file size needs to be of type int"
                 log.debug("Local file has been uploaded {}".format(name))
-
-                log.debug("type size {}".format(type(size)))
-                log.debug("type name {}".format(type(name)))
-                log.debug("type uploaded_files[name] {}".format(type(uploaded_files[name])))
-    
+   
                 if size != uploaded_files[name]: 
                     log.info("Local file size {} doesn't match remote file size {} for file {}".format(size, uploaded_files[name], name))
                     reupload_files.append(name)
@@ -547,7 +543,7 @@ class CreateDirHandler(BaseDsmcHandler):
                         log.debug("Creating new symlink {} because {} is not in exclude_extensions={}".format(newpath, ext, exclude_extensions))
                         os.symlink(oldpath, newpath)
                     else: 
-                        log.debug("Skipping symlinking {} because it is excluded".format(oldpath))
+                        log.debug("Skipping symlinking {} because {} files are excluded".format(oldpath, ext))
                 else: 
                     log.debug("Skipping to create an archive directory of {} because it is excluded".format(oldpath))
         except OSError, msg: 
