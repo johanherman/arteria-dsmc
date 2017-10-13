@@ -476,6 +476,8 @@ class CreateDirHandler(BaseDsmcHandler):
         :return: True if `srcdir` contains a symlink `Unaligned` that points to a directory, 
                  False otherwise 
         """
+        log.debug("Validating Unaligned...")
+
         # TODO: Need a testcase for this 
         unaligned_link = os.path.join(srcdir, "Unaligned")
         unaligned_dir = os.path.abspath(unaligned_link)
@@ -535,17 +537,19 @@ class CreateDirHandler(BaseDsmcHandler):
                 newpath = os.path.join(newtree, entry)
 
                 if os.path.isdir(oldpath) and entry not in exclude_dirs:
+                    log.debug("Creating new dir {} because {} is not in exclude_dirs={}".format(newpath, entry, exclude_dirs))
                     os.mkdir(newpath)
                     CreateDirHandler._create_archive(oldpath, newpath, exclude_dirs, exclude_extensions)
                 elif os.path.isfile(oldpath):
                     _, ext = os.path.splitext(oldpath)
 
                     if ext not in exclude_extensions: 
+                        log.debug("Creating new symlink {} because {} is not in exclude_extensions={}".format(newpath, ext, exclude_extensions))
                         os.symlink(oldpath, newpath)
                     else: 
-                        log.debug("Skipping {} because it is excluded".format(oldpath))
+                        log.debug("Skipping symlinking {} because it is excluded".format(oldpath))
                 else: 
-                    log.debug("Skipping {} because it is excluded".format(oldpath))
+                    log.debug("Skipping to create an archive directory of {} because it is excluded".format(oldpath))
         except OSError, msg: 
             errmsg = "Error when creating archive directory: {}".format(msg)
             log.debug(errmsg)
@@ -587,9 +591,6 @@ class CreateDirHandler(BaseDsmcHandler):
             self.set_status(500, reason=reason)
             self.write_object(response_data)
             return
-
-        # We want to verify that the Unaligned folder is setup correctly when running on biotanks.
-        log.debug("Validating Unaligned...")
 
         my_host = self.request.headers.get('Host')            
         # FIXME: Make testcase for biotank stuff. 
